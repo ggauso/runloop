@@ -1,0 +1,250 @@
+import Foundation
+import Supabase
+import SwiftUI
+
+@MainActor
+@Observable
+final class AccountAccess {
+    let client: SupabaseClient?
+    private(set) var session: Session?
+    private(set) var isRestoring: Bool
+    private(set) var isWorking = false
+    private(set) var message: String?
+    private var isSigningOut = false
+
+    init() {
+        if let configuration = BackendConfiguration() {
+            client = SupabaseClient(
+                supabaseURL: configuration.url,
+                supabaseKey: configuration.key,
+                options: SupabaseClientOptions(auth: .init(emitLocalSessionAsInitialSession: true))
+            )
+        } else {
+            client = nil
+        }
+        isRestoring = client != nil
+    }
+
+    func observeSession() async {
+        guard let client else { return }
+        for await (event, updatedSession) in client.auth.authStateChanges {
+            let wasSignedIn = session != nil
+            session = updatedSession
+            isRestoring = false
+            if event == .signedOut, wasSignedIn, !isSigningOut {
+                message = "La sessione è scaduta. Accedi di nuovo."
+            } else if event == .tokenRefreshed {
+                message = nil
+            }
+        }
+    }
+
+    func authenticate(email: String, password: String, creatingAccount: Bool) async -> Bool {
+        guard let client, !isWorking else { return false }
+        isWorking = true
+        message = nil
+        defer { isWorking = false }
+
+        do {
+            if creatingAccount {
+                let result = try await client.auth.signUp(email: email, password: password)
+                session = result.session
+                if result.session == nil {
+                    message = "Controlla la posta per confermare l’indirizzo, poi accedi."
+                }
+            } else {
+                session = try await client.auth.signIn(email: email, password: password)
+            }
+            return true
+        } catch {
+            message = Self.message(for: error)
+            return false
+        }
+    }
+
+    func refreshSession() async {
+        guard let client, !isWorking else { return }
+        isWorking = true
+        message = nil
+        defer { isWorking = false }
+
+        do {
+            session = try await client.auth.session
+        } catch {
+            message = Self.message(for: error)
+            if let code = (error as? AuthError)?.errorCode,
+               [.sessionNotFound, .sessionExpired, .refreshTokenNotFound, .refreshTokenAlreadyUsed, .invalidJWT].contains(code) {
+                isSigningOut = true
+                try? await client.auth.signOut(scope: .local)
+                session = nil
+                isSigningOut = false
+            }
+        }
+    }
+
+    func signOut() async {
+        guard let client, !isWorking else { return }
+        isWorking = true
+        isSigningOut = true
+        message = nil
+        defer {
+            isWorking = false
+            isSigningOut = false
+        }
+
+        do {
+            try await client.auth.signOut(scope: .local)
+        } catch {
+            message = "Sei uscito su questo iPhone. La connessione al server non è riuscita."
+        }
+        session = nil
+    }
+
+    private static func message(for error: any Error) -> String {
+        if (error as NSError).domain == NSURLErrorDomain {
+            return "Connessione non disponibile. Riprova quando torni online."
+        }
+        switch (error as? AuthError)?.errorCode {
+        case .invalidCredentials: return "Email o password non corrette."
+        case .emailNotConfirmed: return "Conferma l’indirizzo email prima di accedere."
+        case .weakPassword: return "La password non soddisfa i requisiti. Scegline una più sicura."
+        case .emailExists, .userAlreadyExists: return "Questo indirizzo è già registrato. Prova ad accedere."
+        case .overEmailSendRateLimit, .overRequestRateLimit: return "Troppe richieste. Attendi un momento e riprova."
+        case .sessionNotFound, .sessionExpired, .refreshTokenNotFound, .refreshTokenAlreadyUsed, .invalidJWT:
+            return "La sessione è scaduta. Accedi di nuovo."
+        default: return "Il servizio di accesso non è disponibile. Riprova tra poco."
+        }
+    }
+}
+
+private struct BackendConfiguration {
+    let url: URL
+    let key: String
+
+    init?(bundle: Bundle = .main) {
+        guard let scheme = bundle.object(forInfoDictionaryKey: "RunloopSupabaseScheme") as? String,
+              let authority = bundle.object(forInfoDictionaryKey: "RunloopSupabaseAuthority") as? String,
+              let key = bundle.object(forInfoDictionaryKey: "RunloopSupabasePublishableKey") as? String,
+              Self.isPublicKey(key),
+              let url = URL(string: "\(scheme)://\(authority)"), let host = url.host,
+              url.user == nil, url.password == nil, url.path.isEmpty, url.query == nil, url.fragment == nil
+        else { return nil }
+
+        #if DEBUG && targetEnvironment(simulator)
+        guard url.scheme == "https" || (url.scheme == "http" && ["127.0.0.1", "localhost"].contains(host)) else { return nil }
+        #else
+        guard url.scheme == "https" else { return nil }
+        #endif
+
+        self.url = url
+        self.key = key
+    }
+
+    private static func isPublicKey(_ key: String) -> Bool {
+        if key.hasPrefix("sb_publishable_") { return key.count > "sb_publishable_".count }
+        let segments = key.split(separator: ".")
+        guard segments.count == 3 else { return false }
+        var payload = segments[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+        guard let data = Data(base64Encoded: payload),
+              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return claims["role"] as? String == "anon"
+    }
+}
+
+struct AccountView: View {
+    @Environment(AccountAccess.self) private var access
+    @Environment(WorkoutCloudSync.self) private var workoutCloud
+    @State private var email = ""
+    @State private var password = ""
+    @State private var creatingAccount = false
+
+    private var normalizedEmail: String { email.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        Form {
+            if access.isRestoring {
+                ProgressView("Ripristino dell’accesso…")
+            } else if let session = access.session {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.largeTitle).foregroundStyle(RunloopStyle.accent)
+                            .accessibilityHidden(true)
+                        Text(session.user.email ?? "Account Runloop")
+                            .font(.headline.weight(.heavy))
+                            .textSelection(.enabled)
+                    }
+                        .padding(.vertical, 10)
+                        .accessibilityIdentifier("account.identity")
+                    if session.isExpired {
+                        Text("Il cloud è in pausa finché la sessione non si riconnette.")
+                        Button("Riconnetti") { Task { await access.refreshSession() } }
+                    }
+                    Button("Esci", role: .destructive) { Task { await access.signOut() } }
+                        .accessibilityIdentifier("account.signOut")
+                }
+                .listRowBackground(RunloopStyle.panel)
+                Section {
+                    Toggle("Sincronizza frequenza cardiaca media", isOn: Binding(
+                        get: { workoutCloud.sharesHeartRate },
+                        set: { workoutCloud.setSharesHeartRate($0) }
+                    ))
+                } footer: {
+                    Text("Se attivo, Runloop include la frequenza cardiaca media nelle prossime corse sincronizzate. I singoli campioni restano in Salute.")
+                }
+                .listRowBackground(RunloopStyle.panel)
+            } else if access.client != nil {
+                Section {
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("account.email")
+                    SecureField("Password", text: $password)
+                        .textContentType(creatingAccount ? .newPassword : .password)
+                        .accessibilityIdentifier("account.password")
+                    Button(creatingAccount ? "Crea account" : "Accedi") { submit() }
+                        .buttonStyle(RunloopButtonStyle())
+                        .disabled(!normalizedEmail.contains("@") || password.count < (creatingAccount ? 6 : 1))
+                        .accessibilityIdentifier("account.submit")
+                } footer: {
+                    Text("L’account serve per il routing online e la sincronizzazione. Gli allenamenti locali restano accessibili.")
+                }
+                .listRowBackground(RunloopStyle.panel)
+
+                Button(creatingAccount ? "Ho già un account" : "Crea un account") {
+                    creatingAccount.toggle()
+                    password = ""
+                }
+                .listRowBackground(Color.clear)
+            } else {
+                ContentUnavailableView("Servizio non configurato", systemImage: "person.crop.circle.badge.exclamationmark",
+                                       description: Text("Puoi comunque consultare i tuoi allenamenti locali."))
+            }
+
+            if access.isWorking {
+                ProgressView("Operazione in corso…")
+            } else if let message = access.message {
+                Text(message)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("account.status")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .runloopCanvas()
+        .disabled(access.isWorking)
+        .navigationTitle(creatingAccount && access.session == nil ? "Registrazione" : "Account")
+    }
+
+    private func submit() {
+        let submittedPassword = password
+        Task {
+            let accepted = await access.authenticate(email: normalizedEmail, password: submittedPassword, creatingAccount: creatingAccount)
+            password = ""
+            if accepted { creatingAccount = false }
+        }
+    }
+}

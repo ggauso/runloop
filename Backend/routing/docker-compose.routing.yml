@@ -1,0 +1,35 @@
+services:
+  api-gw:
+    ports: !override
+      - "${RUNLOOP_API_HOST_BIND:-127.0.0.1}:${API_GW_HTTP_PORT:-${KONG_HTTP_PORT:-8000}}:8000/tcp"
+
+  functions:
+    environment:
+      RUNLOOP_GRAPHHOPPER_URL: http://graphhopper:18989
+    depends_on:
+      graphhopper:
+        condition: service_healthy
+
+  graphhopper:
+    build:
+      context: ../routing
+    environment:
+      RUNLOOP_ROUTING_MAX_HEAP: ${RUNLOOP_ROUTING_MAX_HEAP:-512m}
+    volumes:
+      - type: bind
+        source: ${RUNLOOP_OSM_FILE:-../routing/data/region.osm.pbf}
+        target: /var/lib/runloop/region.osm.pbf
+        read_only: true
+        bind:
+          create_host_path: false
+      - graphhopper-cache:/var/lib/runloop/graph
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:18989/info"]
+      interval: 5s
+      timeout: 3s
+      start_period: 60s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  graphhopper-cache:

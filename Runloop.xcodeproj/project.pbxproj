@@ -1,0 +1,590 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		129A57D074A04DA0470A5EB2 /* RunloopWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E841BE0D719B0B08D54D659B /* RunloopWatchApp.swift */; };
+		430CA99FD15546C7A2415B3A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA5EFF0955721B705D4E5F55 /* Foundation.framework */; };
+		5D578643F25C007503124BDB /* RunloopApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EADF /* RunloopApp.swift */; };
+		5D578643F25C007503124BDC /* RouteStartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE0 /* RouteStartView.swift */; };
+		5D578643F25C007503124BDD /* AccountAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE1 /* AccountAccess.swift */; };
+		5D578643F25C007503124BDE /* RoutingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE4 /* RoutingService.swift */; };
+		5D578643F25C007503124BDF /* RouteLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE5 /* RouteLibrary.swift */; };
+		72837DD9D140DC99380434B7 /* RunloopCore in Frameworks */ = {isa = PBXBuildFile; productRef = 8880AE9ECF9875ABCF8C052F /* RunloopCore */; };
+		72837DD9D140DC99380434B8 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 8880AE9ECF9875ABCF8C0530 /* Supabase */; };
+		9179D48A4D36D46E25415463 /* RunloopCore in Frameworks */ = {isa = PBXBuildFile; productRef = A50C901A9A8F4332F842ED98 /* RunloopCore */; };
+		C156713BCE41AD8F9105ECFD /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E3582F741687C98E130D8E9C /* Foundation.framework */; };
+		5D578643F25C007503124BE0 /* PhoneWatchTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE6 /* PhoneWatchTransfer.swift */; };
+		5D578643F25C007503124BE1 /* WatchRouteInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE7 /* WatchRouteInbox.swift */; };
+		5D578643F25C007503124BE2 /* Runloop Watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 6C122703ABA39B7230DDBB02 /* Runloop Watch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5D578643F25C007503124BE6 /* WatchWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE8 /* WatchWorkout.swift */; };
+		5D578643F25C007503124BE7 /* WatchRunRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEB /* WatchRunRecording.swift */; };
+		5D578643F25C007503124BE8 /* WatchWorkoutOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEC /* WatchWorkoutOutbox.swift */; };
+		5D578643F25C007503124BE9 /* WorkoutCloudSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAED /* WorkoutCloudSync.swift */; };
+		5D578643F25C007503124BEA /* WorkoutHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEE /* WorkoutHistoryView.swift */; };
+		5D578643F25C007503124BEB /* GPXShareButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEF /* GPXShareButton.swift */; };
+
+		5D578643F25C007503124BEC /* RunloopStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAF0 /* RunloopStyle.swift */; };
+		5D578643F25C007503124BED /* RunloopStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAF0 /* RunloopStyle.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		5D578643F25C007503124BE3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AABF659E9210E614DCEA9A6D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 912F9509D9C50C690F6701F5;
+			remoteInfo = "Runloop Watch";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		5D578643F25C007503124BE4 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				5D578643F25C007503124BE2 /* Runloop Watch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		3BDA207AE1822BD8EC26EADF /* RunloopApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RunloopApp.swift; path = Apps/iOS/RunloopApp.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE0 /* RouteStartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RouteStartView.swift; path = Apps/iOS/RouteStartView.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE1 /* AccountAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AccountAccess.swift; path = Apps/iOS/AccountAccess.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE2 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Apps/iOS/Configuration/Debug.xcconfig; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Apps/iOS/Configuration/Info.plist; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE4 /* RoutingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RoutingService.swift; path = Apps/iOS/RoutingService.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE5 /* RouteLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RouteLibrary.swift; path = Apps/iOS/RouteLibrary.swift; sourceTree = "<group>"; };
+		6C122703ABA39B7230DDBB02 /* Runloop Watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Runloop Watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7427B91B2509D1023C65BAD0 /* Runloop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runloop.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA5EFF0955721B705D4E5F55 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		E3582F741687C98E130D8E9C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		E841BE0D719B0B08D54D659B /* RunloopWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RunloopWatchApp.swift; path = Apps/watchOS/RunloopWatchApp.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE6 /* PhoneWatchTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhoneWatchTransfer.swift; path = Apps/iOS/PhoneWatchTransfer.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE7 /* WatchRouteInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchRouteInbox.swift; path = Apps/watchOS/WatchRouteInbox.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE8 /* WatchWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchWorkout.swift; path = Apps/watchOS/WatchWorkout.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE9 /* RunloopWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = RunloopWatch.entitlements; path = Apps/watchOS/RunloopWatch.entitlements; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAEA /* Watch Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Watch Info.plist"; path = Apps/watchOS/Info.plist; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAEB /* WatchRunRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchRunRecording.swift; path = Apps/watchOS/WatchRunRecording.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAEC /* WatchWorkoutOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchWorkoutOutbox.swift; path = Apps/watchOS/WatchWorkoutOutbox.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAED /* WorkoutCloudSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutCloudSync.swift; path = Apps/iOS/WorkoutCloudSync.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAEE /* WorkoutHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutHistoryView.swift; path = Apps/iOS/WorkoutHistoryView.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAEF /* GPXShareButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GPXShareButton.swift; path = Apps/iOS/GPXShareButton.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAF0 /* RunloopStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RunloopStyle.swift; path = Apps/Shared/RunloopStyle.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2CB0BA712D24F5F3BE16A379 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C156713BCE41AD8F9105ECFD /* Foundation.framework in Frameworks */,
+				9179D48A4D36D46E25415463 /* RunloopCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8354CFF65C0A8C18269F1497 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				430CA99FD15546C7A2415B3A /* Foundation.framework in Frameworks */,
+				72837DD9D140DC99380434B7 /* RunloopCore in Frameworks */,
+				72837DD9D140DC99380434B8 /* Supabase in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8978D43DF41BDB81F10D5B58 /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				E3582F741687C98E130D8E9C /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
+		901DA2FA44DE55522230149F /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				AA5EFF0955721B705D4E5F55 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		987CAEAE8665F48C3565FC9D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				901DA2FA44DE55522230149F /* iOS */,
+				8978D43DF41BDB81F10D5B58 /* watchOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		CAFFAC9FB83B7BD8C36E01EC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7427B91B2509D1023C65BAD0 /* Runloop.app */,
+				6C122703ABA39B7230DDBB02 /* Runloop Watch.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E70ED09E65C9ED78CB43A231 = {
+			isa = PBXGroup;
+			children = (
+				CAFFAC9FB83B7BD8C36E01EC /* Products */,
+				987CAEAE8665F48C3565FC9D /* Frameworks */,
+				3BDA207AE1822BD8EC26EADF /* RunloopApp.swift */,
+				3BDA207AE1822BD8EC26EAE0 /* RouteStartView.swift */,
+				3BDA207AE1822BD8EC26EAE1 /* AccountAccess.swift */,
+				3BDA207AE1822BD8EC26EAE2 /* Debug.xcconfig */,
+				3BDA207AE1822BD8EC26EAE3 /* Info.plist */,
+				3BDA207AE1822BD8EC26EAE4 /* RoutingService.swift */,
+				3BDA207AE1822BD8EC26EAE5 /* RouteLibrary.swift */,
+				3BDA207AE1822BD8EC26EAE6 /* PhoneWatchTransfer.swift */,
+				3BDA207AE1822BD8EC26EAED /* WorkoutCloudSync.swift */,
+				3BDA207AE1822BD8EC26EAEE /* WorkoutHistoryView.swift */,
+				3BDA207AE1822BD8EC26EAEF /* GPXShareButton.swift */,
+				3BDA207AE1822BD8EC26EAF0 /* RunloopStyle.swift */,
+				E841BE0D719B0B08D54D659B /* RunloopWatchApp.swift */,
+				3BDA207AE1822BD8EC26EAE7 /* WatchRouteInbox.swift */,
+				3BDA207AE1822BD8EC26EAE8 /* WatchWorkout.swift */,
+				3BDA207AE1822BD8EC26EAE9 /* RunloopWatch.entitlements */,
+				3BDA207AE1822BD8EC26EAEA /* Watch Info.plist */,
+				3BDA207AE1822BD8EC26EAEB /* WatchRunRecording.swift */,
+				3BDA207AE1822BD8EC26EAEC /* WatchWorkoutOutbox.swift */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		65D57175601B56E79B8791E1 /* Runloop */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 172F9E7122FA3FE75CE79C1C /* Build configuration list for PBXNativeTarget "Runloop" */;
+			buildPhases = (
+				253C17E0BFE7DF9534E708D0 /* Sources */,
+				8354CFF65C0A8C18269F1497 /* Frameworks */,
+				F7AF6D33E8117EB1E990E523 /* Resources */,
+				5D578643F25C007503124BE4 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5D578643F25C007503124BE5 /* PBXTargetDependency */,
+			);
+			name = Runloop;
+			packageProductDependencies = (
+				8880AE9ECF9875ABCF8C052F /* RunloopCore */,
+				8880AE9ECF9875ABCF8C0530 /* Supabase */,
+			);
+			productName = Runloop;
+			productReference = 7427B91B2509D1023C65BAD0 /* Runloop.app */;
+			productType = "com.apple.product-type.application";
+		};
+		912F9509D9C50C690F6701F5 /* Runloop Watch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 56120C2D2D470FD410C4A09B /* Build configuration list for PBXNativeTarget "Runloop Watch" */;
+			buildPhases = (
+				D0909FAABB936BB1C3B3ACBF /* Sources */,
+				2CB0BA712D24F5F3BE16A379 /* Frameworks */,
+				AFF39B4138D11B836037EF43 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Runloop Watch";
+			packageProductDependencies = (
+				A50C901A9A8F4332F842ED98 /* RunloopCore */,
+			);
+			productName = "Runloop Watch";
+			productReference = 6C122703ABA39B7230DDBB02 /* Runloop Watch.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AABF659E9210E614DCEA9A6D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = E0649E13521CB6DCCED39DC6 /* Build configuration list for PBXProject "Runloop" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = E70ED09E65C9ED78CB43A231;
+			packageReferences = (
+				1B6E2CB352F6BCAD1DF3103A /* XCLocalSwiftPackageReference "Packages/RunloopCore" */,
+				1B6E2CB352F6BCAD1DF3103B /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
+			productRefGroup = CAFFAC9FB83B7BD8C36E01EC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				65D57175601B56E79B8791E1 /* Runloop */,
+				912F9509D9C50C690F6701F5 /* Runloop Watch */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AFF39B4138D11B836037EF43 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F7AF6D33E8117EB1E990E523 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		253C17E0BFE7DF9534E708D0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D578643F25C007503124BDB /* RunloopApp.swift in Sources */,
+				5D578643F25C007503124BDC /* RouteStartView.swift in Sources */,
+				5D578643F25C007503124BDD /* AccountAccess.swift in Sources */,
+				5D578643F25C007503124BDE /* RoutingService.swift in Sources */,
+				5D578643F25C007503124BDF /* RouteLibrary.swift in Sources */,
+				5D578643F25C007503124BE0 /* PhoneWatchTransfer.swift in Sources */,
+				5D578643F25C007503124BE9 /* WorkoutCloudSync.swift in Sources */,
+				5D578643F25C007503124BEA /* WorkoutHistoryView.swift in Sources */,
+				5D578643F25C007503124BEB /* GPXShareButton.swift in Sources */,
+				5D578643F25C007503124BEC /* RunloopStyle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0909FAABB936BB1C3B3ACBF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				129A57D074A04DA0470A5EB2 /* RunloopWatchApp.swift in Sources */,
+				5D578643F25C007503124BE1 /* WatchRouteInbox.swift in Sources */,
+				5D578643F25C007503124BE6 /* WatchWorkout.swift in Sources */,
+				5D578643F25C007503124BE7 /* WatchRunRecording.swift in Sources */,
+				5D578643F25C007503124BE8 /* WatchWorkoutOutbox.swift in Sources */,
+				5D578643F25C007503124BED /* RunloopStyle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5D578643F25C007503124BE5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 912F9509D9C50C690F6701F5 /* Runloop Watch */;
+			targetProxy = 5D578643F25C007503124BE3 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		52181258677E5B27A36D13B8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUNLOOP_IOS_BUNDLE_IDENTIFIER = com.luigiausino.runloop;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		62E3AD762974A2663FF187A7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = UTZ3WTZ42X;
+				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = Apps/watchOS/RunloopWatch.entitlements;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Runloop legge distanza e frequenza cardiaca per mostrarti le metriche durante la corsa.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Runloop salva le tue corse nell’app Salute.";
+				INFOPLIST_FILE = Apps/watchOS/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione durante la corsa per registrare distanza e traccia GPS.";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(RUNLOOP_BUNDLE_IDENTIFIER)";
+				RUNLOOP_BUNDLE_IDENTIFIER = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER).watchkitapp";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
+		8848F54D6EAFB5BE453F1821 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUNLOOP_IOS_BUNDLE_IDENTIFIER = com.luigiausino.runloop;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		97C3F4EC38EF30C5C13FF7B3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 3BDA207AE1822BD8EC26EAE2 /* Debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = UTZ3WTZ42X;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione per proporti il punto di partenza.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_FILE = Apps/iOS/Configuration/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(RUNLOOP_BUNDLE_IDENTIFIER)";
+				RUNLOOP_BUNDLE_IDENTIFIER = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		C1587CB9C70DFA860656C054 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = UTZ3WTZ42X;
+				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = Apps/watchOS/RunloopWatch.entitlements;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Runloop legge distanza e frequenza cardiaca per mostrarti le metriche durante la corsa.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Runloop salva le tue corse nell’app Salute.";
+				INFOPLIST_FILE = Apps/watchOS/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione durante la corsa per registrare distanza e traccia GPS.";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(RUNLOOP_BUNDLE_IDENTIFIER)";
+				RUNLOOP_BUNDLE_IDENTIFIER = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER).watchkitapp";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		D39340F25DFA204B1B590352 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = UTZ3WTZ42X;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione per proporti il punto di partenza.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_FILE = Apps/iOS/Configuration/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(RUNLOOP_BUNDLE_IDENTIFIER)";
+				RUNLOOP_BUNDLE_IDENTIFIER = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		172F9E7122FA3FE75CE79C1C /* Build configuration list for PBXNativeTarget "Runloop" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D39340F25DFA204B1B590352 /* Release */,
+				97C3F4EC38EF30C5C13FF7B3 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		56120C2D2D470FD410C4A09B /* Build configuration list for PBXNativeTarget "Runloop Watch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				62E3AD762974A2663FF187A7 /* Release */,
+				C1587CB9C70DFA860656C054 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E0649E13521CB6DCCED39DC6 /* Build configuration list for PBXProject "Runloop" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8848F54D6EAFB5BE453F1821 /* Debug */,
+				52181258677E5B27A36D13B8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		1B6E2CB352F6BCAD1DF3103A /* XCLocalSwiftPackageReference "Packages/RunloopCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RunloopCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1B6E2CB352F6BCAD1DF3103B /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {kind = exactVersion; version = 2.55.8; };
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8880AE9ECF9875ABCF8C052F /* RunloopCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1B6E2CB352F6BCAD1DF3103A /* XCLocalSwiftPackageReference "Packages/RunloopCore" */;
+			productName = RunloopCore;
+		};
+		A50C901A9A8F4332F842ED98 /* RunloopCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1B6E2CB352F6BCAD1DF3103A /* XCLocalSwiftPackageReference "Packages/RunloopCore" */;
+			productName = RunloopCore;
+		};
+		8880AE9ECF9875ABCF8C0530 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1B6E2CB352F6BCAD1DF3103B /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AABF659E9210E614DCEA9A6D /* Project object */;
+}

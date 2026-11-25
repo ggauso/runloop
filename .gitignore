@@ -1,0 +1,15 @@
+.DS_Store
+**/.env
+**/.env.local
+**/.build/
+**/DerivedData/
+**/xcuserdata/
+Backend/supabase/volumes/db/data/
+Backend/supabase/volumes/storage/
+Backend/supabase/volumes/logs/
+Backend/routing/data/
+Apps/iOS/Configuration/Local.xcconfig
+
+# Backup locali di database non inizializzati
+Backend/supabase/volumes/db/data.failed-*/
+Backend/supabase/.env.old

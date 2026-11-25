@@ -1,0 +1,24 @@
+graphhopper:
+  datareader.file: ""
+  graph.location: graph-cache
+  graph.encoded_values: foot_access, foot_average_speed, foot_priority, hike_rating, mtb_rating
+  profiles:
+    - name: foot
+      custom_model_files: [foot.json]
+  profiles_ch: []
+  profiles_lm: []
+  routing.max_visited_nodes: 100000
+  import.osm.ignored_highways: motorway,trunk
+
+server:
+  application_connectors:
+    - type: http
+      port: 18989
+      bind_host: 127.0.0.1
+  admin_connectors: []
+  request_log:
+    appenders: []
+
+logging:
+  loggers:
+    com.graphhopper.resources.RouteResource: OFF
