@@ -1,6 +1,8 @@
 # Runloop
 
-App SwiftUI per iOS 26 e watchOS 26. Su iPhone si creano e si salvano percorsi, si consulta lo storico e si esportano file GPX. Il Watch riceve i percorsi, registra corse con o senza traccia pianificata e conserva i risultati finché l’iPhone li riceve. `Packages/RunloopCore` contiene i contratti condivisi.
+App SwiftUI per iOS 26 e watchOS 26. Si può registrare una corsa outdoor con iPhone o Watch. Scegliere «Corsa libera» oppure aprire un percorso e toccare «Inizia corsa». Il dispositivo scelto registra GPS e tempo attivo e salva il risultato. Aprendo Runloop sul compagno raggiungibile si può seguire e controllare la stessa corsa. Sul telefono sono disponibili storico completo, cloud e GPX. Il Watch conserva i percorsi scaricati, le corse locali e fino a 20 riepiloghi ricevuti dall’iPhone. `Packages/RunloopCore` contiene i contratti condivisi.
+
+Per usare il sensore cardiaco del Watch, avvia la corsa al polso oppure apri Runloop su entrambi e scegli **Usa Apple Watch** dall’iPhone. Durante la corsa tocca **Battito** per impostare la tua FC massima e, se vuoi, una zona obiettivo. Su iPhone trovi la stessa impostazione in **Account → Preferenze → Zone cardiache**. Con **Termina → Salva corsa** ritrovi l’attività nello storico. **Termina → Scarta senza salvare → Scarta corsa** abbandona la registrazione e rimuove la traccia temporanea.
 
 I due target usano la firma automatica con il Personal Team `UTZ3WTZ42X`. Il bundle ID iPhone `com.luigiausino.runloop` è definito in `RUNLOOP_IOS_BUNDLE_IDENTIFIER`. Il target Watch aggiunge `.watchkitapp` e usa il bundle ID iPhone come `WKCompanionAppBundleIdentifier`. Per una build firmata di sviluppo, collegare un dispositivo e selezionarlo in Xcode così che possa registrarlo e creare il profilo.
 
@@ -13,6 +15,13 @@ swift test --package-path Packages/RunloopCore
 ```
 
 Per la prova di coppia, aprire `Runloop.xcodeproj`, scegliere un simulatore iPhone abbinato a un simulatore Apple Watch e avviare Runloop su entrambi. I simulatori usano messaggi interattivi WatchConnectivity. Le build per hardware consegnano i file in background e inviano una conferma dopo il salvataggio. Il collaudo hardware è in [F-501](./FEATURE.md#f-501--eseguire-test-end-to-end-su-dispositivi-reali).
+
+Per provare «La mia posizione» con il servizio locale di Torino, impostare Corso Luigi Einaudi 63 sui simulatori già avviati. Usare gli identificativi della coppia elencati da `xcrun simctl list pairs`.
+
+```sh
+xcrun simctl location ID_IPHONE_SIMULATO set 45.0609793,7.6585835
+xcrun simctl location ID_WATCH_SIMULATO set 45.0609793,7.6585835
+```
 
 ## Supabase locale
 

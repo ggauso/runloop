@@ -1,22 +1,24 @@
 import CoreLocation
 import HealthKit
+import MapKit
 import Observation
 import RunloopCore
 import SwiftUI
 
 @MainActor
 @Observable
-final class WatchWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilderDelegate {
-    enum Phase: Equatable {
-        case idle, starting, running, paused, saving, saved, startFailed, saveFailed
+final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilderDelegate {
+    enum Phase: String, Codable {
+        case idle, starting, running, paused, saving, saved, discarded, discardFailed, startFailed, saveFailed
     }
 
     private let store = HKHealthStore()
-    let recording = WatchRunRecording()
+    let recording = RunRecording()
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var savedHealthWorkout: HKWorkout?
-    private var runID: UUID?
+    private(set) var needsLocationChoice = false
+    private(set) var runID: UUID?
     private var startedAt: Date?
     private var activeStart: Date?
     private var accumulatedTime: TimeInterval = 0
@@ -29,23 +31,44 @@ final class WatchWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuild
     private(set) var route: SyncEnvelope<RouteTransfer>?
     private(set) var ownerID: UUID?
     private var healthDistance: Double = 0
-    private(set) var heartRate: Double?
+    private(set) var pulse: PulseReading?
     private(set) var message: String?
 
     var isPresented: Bool { phase != .idle }
     var distance: Double { max(healthDistance, recording.distance) }
 
-    func start(route: SyncEnvelope<RouteTransfer>?, ownerID: UUID?) {
+    func start(id: UUID, route: SyncEnvelope<RouteTransfer>?, ownerID: UUID?) {
         guard phase == .idle else { return }
+        runID = id
         self.route = route
         self.ownerID = route?.payload.ownerID ?? ownerID
         phase = .starting
-        Task { await startSession() }
+        Task {
+            #if os(watchOS)
+            let status = await recording.authorizationForStart()
+            guard runID == id, phase == .starting else { return }
+            guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+                needsLocationChoice = true
+                return
+            }
+            #endif
+            await startSession(recordsGPS: true)
+        }
     }
 
-    private func startSession() async {
+    func resolveLocationChoice(recordWithoutGPS: Bool) {
+        guard phase == .starting, needsLocationChoice else { return }
+        needsLocationChoice = false
+        if recordWithoutGPS {
+            Task { await startSession(recordsGPS: false) }
+        } else {
+            reset()
+        }
+    }
+
+    private func startSession(recordsGPS: Bool) async {
         guard HKHealthStore.isHealthDataAvailable() else {
-            failStarting("Salute non è disponibile su questo Watch.")
+            failStarting("Salute non è disponibile su questo dispositivo.")
             return
         }
 
@@ -74,9 +97,8 @@ final class WatchWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuild
             session = newSession
             builder = newBuilder
 
-            let id = UUID()
-            try recording.prepare(id: id)
-            runID = id
+            guard let runID else { return }
+            try recording.prepare(id: runID, recordsGPS: recordsGPS)
             let date = Date.now
             startedAt = date
             newSession.startActivity(with: date)
@@ -109,6 +131,26 @@ final class WatchWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuild
         session?.stopActivity(with: .now)
     }
 
+    func discard() {
+        guard phase == .running || phase == .paused || phase == .discardFailed else { return }
+        freezeTime(at: .now)
+        // Detach before ending: late HealthKit callbacks must never enter the save path.
+        let abandoned = session
+        session = nil
+        builder?.discardWorkout()
+        builder = nil
+        abandoned?.end()
+        do {
+            try recording.discard()
+            pulse = nil
+            healthDistance = 0
+            phase = .discarded
+        } catch {
+            message = "Impossibile rimuovere la traccia temporanea."
+            phase = .discardFailed
+        }
+    }
+
     func retrySave() {
         guard phase == .saveFailed, let stoppedAt else { return }
         phase = .saving
@@ -116,11 +158,15 @@ final class WatchWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuild
     }
 
     func close() {
-        guard phase == .saved || phase == .startFailed else { return }
+        guard phase == .saved || phase == .discarded || phase == .startFailed else { return }
+        reset()
+    }
+
+    private func reset() {
         route = nil
         ownerID = nil
         healthDistance = 0
-        heartRate = nil
+        pulse = nil
         message = nil
         recording.clear()
         savedHealthWorkout = nil
@@ -173,7 +219,7 @@ final class WatchWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuild
             let record = RecordedWorkout(id: runID, ownerID: ownerID, routeID: route?.entityID,
                                          plannedRoute: route?.payload.geometry, healthKitID: workout.uuid,
                                          startedAt: startedAt, endedAt: date, activeDurationSeconds: elapsed(at: date),
-                                         distanceMeters: distance, averageHeartRateBPM: averageHeartRate, points: points)
+                                         distanceMeters: distance, averageHeartRateBPM: averageHeartRate, points: points, source: .localDevice)
             try recording.save(record)
             let currentSession = session
             session = nil
@@ -243,7 +289,11 @@ final class WatchWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuild
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: any Error) {
         Task { @MainActor in
             guard session === workoutSession else { return }
-            if phase == .starting { failStarting("Salute non riesce ad avviare la corsa. Riprova.") }
+            if phase == .starting {
+                failStarting("Salute non riesce ad avviare la corsa. Riprova.")
+            } else if phase == .running || phase == .paused {
+                handleState(.ended, at: .now)
+            }
         }
     }
 
@@ -254,127 +304,49 @@ final class WatchWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuild
         let heartType = HKQuantityType(.heartRate)
         let meters = types.contains(distanceType)
             ? workoutBuilder.statistics(for: distanceType)?.sumQuantity()?.doubleValue(for: .meter()) : nil
-        let beats = types.contains(heartType)
-            ? workoutBuilder.statistics(for: heartType)?.mostRecentQuantity()?.doubleValue(for: .count().unitDivided(by: .minute())) : nil
+        let stats = types.contains(heartType) ? workoutBuilder.statistics(for: heartType) : nil
+        let reading = stats.flatMap { stat -> PulseReading? in
+            guard let sample = stat.mostRecentQuantity(), let interval = stat.mostRecentQuantityDateInterval() else { return nil }
+            return PulseReading(bpm: sample.doubleValue(for: .count().unitDivided(by: .minute())), measured: interval.end)
+        }
         Task { @MainActor in
             guard builder === workoutBuilder else { return }
             if let meters { healthDistance = meters }
-            if let beats { heartRate = beats }
+            if let reading, reading.measured >= (pulse?.measured ?? .distantPast) { pulse = reading }
         }
     }
 }
 
-struct WatchWorkoutView: View {
-    var workout: WatchWorkout
-    @State private var confirmsEnd = false
-    @ScaledMetric(relativeTo: .title) private var clockSize = 35.0
+struct RunLiveMap: View {
+    let planned: [RouteCoordinate]
+    let trail: [RouteCoordinate]
+    @Environment(\.runloopAccent) private var accent
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(workout.route?.payload.name ?? "Corsa libera")
-                    .font(.footnote.weight(.heavy))
-                    .accessibilityAddTraits(.isHeader)
-                switch workout.phase {
-                case .starting:
-                    ProgressView("Avvio corsa…")
-                case .running, .paused:
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        metrics(at: context.date)
-                    }
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 6) { workoutActions }
-                            .fixedSize(horizontal: true, vertical: false)
-                        VStack(spacing: 6) { workoutActions }
-                    }
-                    if let warning = workout.recording.warning {
-                        Text(warning).font(.caption2).foregroundStyle(RunloopStyle.muted)
-                    }
-                case .saving:
-                    ProgressView("Salvataggio…")
-                case .saved:
-                    Label("Salvata in Salute", systemImage: "checkmark.circle.fill")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(RunloopStyle.accent)
-                    metrics(at: .now)
-                    if let message = workout.message { Text(message).font(.caption2) }
-                    Button("Fine") { workout.close() }.buttonStyle(RunloopButtonStyle())
-                case .startFailed:
-                    Text(workout.message ?? "Impossibile avviare la corsa.")
-                    Button("Chiudi") { workout.close() }.buttonStyle(RunloopButtonStyle(kind: .secondary))
-                case .saveFailed:
-                    Text(workout.message ?? "Impossibile salvare la corsa.")
-                    Button("Riprova") { workout.retrySave() }.buttonStyle(RunloopButtonStyle())
-                case .idle:
-                    EmptyView()
+        if !planned.isEmpty || !trail.isEmpty {
+            Map {
+                if planned.count > 1 {
+                    MapPolyline(coordinates: planned.map(\.location))
+                        .stroke(RunloopStyle.text, style: StrokeStyle(lineWidth: 3, dash: [5, 4]))
+                }
+                if trail.count > 1 {
+                    MapPolyline(coordinates: trail.map(\.location)).stroke(accent, lineWidth: 4)
+                }
+                if let point = trail.last {
+                    Annotation("Posizione", coordinate: point.location) {
+                        Circle().fill(accent).frame(width: 10, height: 10)
+                            .overlay { Circle().stroke(.black, lineWidth: 1.5) }
+                    }.annotationTitles(.hidden)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .mapStyle(.standard(emphasis: .muted))
+            #if os(iOS)
+            .frame(height: 235)
+            #else
+            .frame(height: 120)
+            #endif
+            .clipShape(.rect(cornerRadius: RunloopStyle.radius))
+            .accessibilityLabel(planned.isEmpty ? "Traccia della corsa" : "Percorso pianificato e traccia della corsa")
         }
-        .runloopCanvas()
-        .sensoryFeedback(trigger: workout.phase) { previous, current in
-            if current == .saved { return .success }
-            if current == .paused || (previous == .paused && current == .running) { return .selection }
-            return nil
-        }
-        .confirmationDialog("Terminare la corsa?", isPresented: $confirmsEnd, titleVisibility: .visible) {
-            Button("Termina corsa", role: .destructive) { workout.stop() }
-            Button("Continua", role: .cancel) {}
-        }
-    }
-
-    @ViewBuilder private var workoutActions: some View {
-        Button(workout.phase == .paused ? "Riprendi" : "Pausa",
-               systemImage: workout.phase == .paused ? "play.fill" : "pause.fill") {
-            workout.togglePause()
-        }
-        .buttonStyle(RunloopButtonStyle(kind: workout.phase == .paused ? .primary : .secondary))
-        Button("Termina", role: .destructive) { confirmsEnd = true }
-            .buttonStyle(RunloopButtonStyle(kind: .destructive))
-    }
-
-    private func metrics(at date: Date) -> some View {
-        let elapsed = workout.elapsed(at: date)
-        let paused = workout.phase == .paused
-        return VStack(alignment: .leading, spacing: 6) {
-            VStack(alignment: .leading, spacing: 0) {
-                Label(paused ? "In pausa" : "Tempo attivo",
-                      systemImage: paused ? "pause.circle.fill" : "timer")
-                    .font(.caption2.weight(.semibold)).foregroundStyle(RunloopStyle.muted)
-                Text(Duration.seconds(elapsed).formatted(.time(pattern: .hourMinuteSecond)))
-                    .font(.system(size: clockSize, weight: .black))
-                    .monospacedDigit().tracking(-1.6)
-                    .foregroundStyle(workout.phase == .running ? RunloopStyle.accent : RunloopStyle.text)
-            }
-            .accessibilityElement(children: .combine)
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { secondaryMetrics(elapsed: elapsed) }
-                    .fixedSize(horizontal: true, vertical: false)
-                VStack(alignment: .leading, spacing: 4) { secondaryMetrics(elapsed: elapsed) }
-            }
-            if let heartRate = workout.heartRate {
-                Label("\(heartRate.formatted(.number.precision(.fractionLength(0)))) bpm", systemImage: "heart")
-                    .font(.footnote.weight(.bold)).monospacedDigit()
-            }
-        }
-    }
-
-    @ViewBuilder private func secondaryMetrics(elapsed: TimeInterval) -> some View {
-        metric("Distanza", watchDistance(workout.distance))
-        if workout.distance > 0, elapsed > 0,
-           let seconds = Int(exactly: (elapsed / workout.distance * 1000).rounded(.down)) {
-            metric("Passo medio", "\(seconds / 60):\(String(format: "%02d", seconds % 60)) /km")
-        }
-    }
-
-    private func metric(_ name: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(name).font(.caption2).foregroundStyle(RunloopStyle.muted)
-            Text(value).font(.footnote.weight(.heavy)).monospacedDigit()
-        }
-        .accessibilityElement(children: .combine)
     }
 }

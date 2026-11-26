@@ -10,6 +10,9 @@ volumes/functions/main/**
 !volumes/functions/hello/
 volumes/functions/hello/**
 !volumes/functions/hello/index.ts
+!volumes/functions/routing/
+volumes/functions/routing/**
+!volumes/functions/routing/index.ts
 .env
 test.http
 docker-compose.override.yml

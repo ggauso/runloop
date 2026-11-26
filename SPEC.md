@@ -1,6 +1,6 @@
 # Runloop — Specifiche di prodotto e tecniche
 
-> **Versione:** 0.3 · **Data:** 24 novembre 2026 · **Stato:** specifica di prodotto
+> **Versione:** 0.4 · **Data:** 25 novembre 2026 · **Stato:** specifica di prodotto
 >
 > Questo documento descrive **cosa** deve realizzare il progetto. La pianificazione esecutiva, con task e sotto-task, è in [FEATURE.md](./FEATURE.md).
 
@@ -15,7 +15,7 @@ Runloop si scarica gratis. Il **MVP gratuito** serve a dimostrare l'intero fluss
 1. Creare su iPhone un percorso **manuale** (punti intermedi con calcolo della traccia) o **automatico ad anello** (distanza desiderata, partenza e varianti).
 2. Vedere il percorso su **Apple Maps** e salvarlo nell'account.
 3. Trasferirlo sull'**Apple Watch** prima di partire.
-4. Correre **senza iPhone e senza Internet**, con un itinerario o in modalità corsa libera, registrando GPS, tempo, distanza, ritmo e, se autorizzata, frequenza cardiaca.
+4. Correre con **il solo iPhone o il solo Watch, anche senza Internet**, con un itinerario o in modalità corsa libera, registrando GPS, tempo, distanza, ritmo e, se autorizzata, frequenza cardiaca.
 5. Ritrovare il risultato sull'iPhone e sincronizzare lo storico con il backend quando la connessione torna disponibile.
 6. Esportare gratuitamente come GPX una propria traccia o un proprio percorso salvato.
 
@@ -39,7 +39,7 @@ Runloop si scarica gratis. Il **MVP gratuito** serve a dimostrare l'intero fluss
 | Mappe visibili | **Apple MapKit**, `Map`, `Marker`, `MapPolyline` su iPhone e Watch |
 | Localizzazione | **Core Location** |
 | Allenamenti | **HealthKit**, `HKWorkoutSession`, `HKLiveWorkoutBuilder`, `HKWorkoutRouteBuilder` |
-| Watch ↔ iPhone | **WatchConnectivity** per consegna percorsi e trasferimento risultati |
+| Watch ↔ iPhone | **WatchConnectivity** per consegna percorsi, stato e comandi live della corsa, trasferimento risultati e riepiloghi recenti |
 | API / Auth / DB | **Supabase self-hosted**, SDK Swift ufficiale |
 | Database geografico | **PostgreSQL + PostGIS** |
 | Container | **Docker Compose** (stack ufficiale Supabase, più routing separato) |
@@ -72,9 +72,9 @@ Runloop si scarica gratis. Il **MVP gratuito** serve a dimostrare l'intero fluss
 | Percorsi | Lista dei percorsi privati, stato, distanza, apertura dettaglio |
 | Crea percorso | Mappa Apple, punto iniziale, modalità *Manuale* / *Ad anello* |
 | Editor | Aggiunta/rimozione/riordino waypoint, anteprima linea, distanza |
-| Generatore | Distanza target in km, punto iniziale, fino a quattro proposte |
-| Dettaglio percorso | Nome, mappa, distanza effettiva, salvataggio, «Invia al Watch» ed esportazione GPX |
-| Allenamenti | Lista sessioni concluse, riepilogo metriche, traccia registrata ed esportazione GPX |
+| Generatore | Distanza target in km, punto iniziale, fino a sei proposte |
+| Dettaglio percorso | Nome, mappa, distanza effettiva, avvio della corsa, «Invia al Watch» ed esportazione GPX |
+| Allenamenti | Corsa libera e lista sessioni concluse, riepilogo metriche, traccia registrata ed esportazione GPX |
 | Impostazioni | Unità metriche, permessi, stato collegamento Watch, logout, privacy |
 
 **Percorso manuale:** la linea segue il grafo pedonale. Con almeno due punti l'utente può calcolare una tratta aperta oppure generare un anello che visita i punti nell'ordine scelto e torna alla partenza con un rientro distinto. È possibile rimuovere e reinserire i waypoint.
@@ -83,11 +83,12 @@ Runloop si scarica gratis. Il **MVP gratuito** serve a dimostrare l'intero fluss
 
 ### Apple Watch — Schermate MVP
 
-1. **Percorsi disponibili:** elenco sincronizzato localmente, stato del download e azione **Corsa libera** disponibile anche con elenco vuoto.
+1. **Percorsi disponibili:** elenco sincronizzato localmente, anteprima dell'ultimo percorso e azione **Corsa libera** disponibile anche con elenco vuoto.
 2. **Prima della corsa:** nome, distanza, anteprima della traccia; avvio esplicito.
 3. **Corsa in corso:** tempo, distanza, ritmo corrente/medio, FC se autorizzata; posizione e traccia sulla mappa quando disponibili.
 4. **Pausa / Riprendi / Termina:** pulsanti evidenti e prevenzione dei tap accidentali.
 5. **Riepilogo:** sessione salvata localmente, stato «Da sincronizzare» o «Sincronizzato».
+6. **Nuovo percorso:** modalità manuale e ad anello, scelta dei punti sulla mappa, varianti ripetibili e conferma di salvataggio. L'iPhone associato calcola e sincronizza la scelta con l'account. Il Watch conserva la traccia selezionata per usarla offline.
 
 La Watch app **non deve chiedere credenziali** né contattare direttamente Supabase: i dati passano attraverso l'iPhone associato. Con un percorso già scaricato o in corsa libera, l'allenamento deve poter partire ed essere salvato anche con l'iPhone lontano.
 
@@ -95,7 +96,7 @@ La Watch app **non deve chiedere credenziali** né contattare direttamente Supab
 
 | Area | Runloop gratuito | Runloop Pro, acquisto unico |
 | --- | --- | --- |
-| Preparazione | Editor manuale, generatore ad anello con fino a quattro proposte, archivio privato e invio al Watch | Importazione di GPX da File su iPhone, con anteprima e salvataggio nella stessa libreria |
+| Preparazione | Editor manuale, generatore ad anello con fino a sei proposte, archivio privato e invio al Watch | Importazione di GPX da File su iPhone, con anteprima e salvataggio nella stessa libreria |
 | Corsa | Corsa libera o lungo la traccia già scaricata, GPS offline, pausa/ripresa, metriche e salvataggio in Salute | Avviso aptico di uscita dal percorso su Watch, calcolato localmente in base a traccia e qualità GPS |
 | Dopo la corsa | Storico completo, traccia GPS, confronto visivo con il percorso pianificato, sincronizzazione e export GPX | Parziali al km e confronti settimanali/mensili su distanza, durata e frequenza delle corse |
 
@@ -117,12 +118,16 @@ La Watch app **non deve chiedere credenziali** né contattare direttamente Supab
 
 ### B. Registrazione dell'allenamento
 
-1. Dal Watch l'utente seleziona un percorso oppure *Corsa libera* e avvia `HKWorkoutSession` (*outdoor running*).
+1. Da iPhone o Watch l'utente seleziona un percorso oppure *Corsa libera* e avvia `HKWorkoutSession` (*outdoor running*).
 2. Core Location registra timestamp e coordinate, HealthKit raccoglie i dati autorizzati.
 3. La sessione prosegue senza connettività; i dati vengono persistiti in modo incrementale e recuperabile.
 4. Pausa/ripresa mantengono coerenti tempo attivo e distanza.
-5. A fine corsa il Watch conclude la sessione, salva l'allenamento in Salute, conserva un riepilogo locale e mette in coda il trasferimento all'iPhone.
+5. Al salvataggio il dispositivo scelto per registrare conclude la sessione, salva l'allenamento in Salute, conserva un riepilogo locale e sul Watch mette in coda il trasferimento all’iPhone. Su iPhone scrive direttamente nello stesso archivio dello storico.
 6. L'iPhone rende disponibile il risultato nello storico locale. Se l'utente è autenticato, carica il risultato su Supabase con deduplicazione basata su ID stabile. Per una corsa registrata prima dell'accesso, l'utente sceglie se caricarla sul proprio account.
+
+Quando le app sono aperte e raggiungibili, il secondo dispositivo visualizza le metriche e invia comandi indirizzati all’identificativo della corsa. L’origine rimane proprietaria della registrazione, delle pause e del salvataggio. Se il collegamento cade i comandi remoti vengono disabilitati, il dispositivo di origine continua offline. Due partenze isolate senza collegamento sono attività distinte. Sul Watch «Allenamenti» mostra le corse locali disponibili e fino a 20 riepiloghi inviati dall’iPhone per lo storico visibile all’account corrente. L’origine è associata alla corsa nell’archivio locale. Le registrazioni precedenti all’introduzione dell’avvio su iPhone provengono dal Watch.
+
+Se sull’iPhone si sceglie di registrare con Apple Watch, il Watch diventa l’origine e invia anche il battito misurato. Le zone Runloop dipendono dalla FC massima impostata e si possono abbinare a una zona obiettivo. Il valore cardiaco perde validità dopo 20 secondi senza un nuovo campione. Un’interruzione volontaria può terminare con salvataggio oppure con scarto confermato della sessione provvisoria.
 
 ### C. Consultazione
 
@@ -146,7 +151,7 @@ Usare **UUID** stabili generati all'origine; timestamp **UTC**; distanza in **me
 - Indici almeno su `owner_id`, `started_at`, `route_id` e, ove utili, indici spaziali GiST. Definire vincoli FK e policy di cancellazione coerenti.
 - **Niente segreti server** nel client: solo URL e chiave pubblicabile Supabase; service role / secret key soltanto lato server.
 - I dati grezzi dei sensori sanitari restano locali per impostazione predefinita; inviare al backend soltanto statistiche selezionate ed esplicitamente autorizzate. Le tracce GPS sono dati personali sensibili nel contesto d'uso: informativa chiara, cancellazione e nessun logging delle coordinate.
-- Il database è la fonte di verità per percorsi e storico sincronizzato; il Watch è la fonte di origine dell'allenamento fino a conferma di caricamento.
+- Il database è la fonte di verità per percorsi e storico sincronizzato; il dispositivo che registra conserva l’allenamento locale fino alla conferma di consegna.
 - Isolare cache e coda cloud per account. Solo le corse locali mai associate a un account possono essere proposte per il caricamento al primo accesso.
 
 ### Payload concettuali
@@ -234,7 +239,7 @@ Runloop/
 
 Con due dispositivi fisici accoppiati, un utente crea e salva un **anello da circa 5 km** su iPhone, lo trova sul Watch, avvia un allenamento senza iPhone e senza rete, termina e salva la corsa, poi ritrova su iPhone traccia e metriche sincronizzate **una sola volta**, anche dopo un riavvio o un retry. La distanza generata può differire dal target; viene mostrata quella effettiva.
 
-Eseguire il test senza acquisto Pro. Verificare anche un allenamento senza percorso salvato sul Watch, la consultazione locale prima del login e l'esportazione della propria traccia.
+Eseguire il test senza acquisto Pro. Verificare anche una partenza con il solo iPhone, una libera sul Watch, i comandi dal secondo dispositivo, la consultazione locale prima del login e l'esportazione della propria traccia.
 
 ### Criterio di accettazione del rilascio Pro
 

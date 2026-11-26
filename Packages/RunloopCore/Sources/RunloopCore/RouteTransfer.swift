@@ -24,13 +24,107 @@ public struct RouteTransfer: Codable, Sendable {
     public let distanceMeters: Double
     public let geometry: RouteGeometry
     public let provider: String
+    public let mode: RouteMode?
+    public let waypoints: [RouteCoordinate]?
+    public let targetDistanceMeters: Int?
 
-    public init(ownerID: UUID, name: String, distanceMeters: Double, geometry: RouteGeometry, provider: String) {
+    public init(ownerID: UUID, name: String, distanceMeters: Double, geometry: RouteGeometry, provider: String,
+                mode: RouteMode? = nil, waypoints: [RouteCoordinate]? = nil, targetDistanceMeters: Int? = nil) {
         self.ownerID = ownerID
         self.name = name
         self.distanceMeters = distanceMeters
         self.geometry = geometry
         self.provider = provider
+        self.mode = mode
+        self.waypoints = waypoints
+        self.targetDistanceMeters = targetDistanceMeters
+    }
+}
+
+public struct RoutePreview: Codable, Identifiable, Sendable {
+    public let id = UUID()
+    public let geometry: RouteGeometry
+    public let distanceMeters: Double
+    public let provider: String
+
+    public init(coordinates: [RouteCoordinate], distanceMeters: Double, provider: String) {
+        geometry = RouteGeometry(coordinates: coordinates)
+        self.distanceMeters = distanceMeters
+        self.provider = provider
+    }
+
+    private enum CodingKeys: String, CodingKey { case geometry, distanceMeters, provider }
+
+    public var coordinates: [RouteCoordinate] { geometry.coordinates }
+
+    public var directionIndependentHash: Int {
+        min(coordinates.hashValue, Array(coordinates.reversed()).hashValue)
+    }
+}
+
+public struct RouteDraft: Codable, Sendable {
+    public static let maximumWaypoints = 25
+    public static let loopBatchSize = 6
+
+    public let mode: RouteMode
+    public let waypoints: [RouteCoordinate]
+    public let targetDistanceMeters: Int
+
+    public init(mode: RouteMode, waypoints: [RouteCoordinate], targetDistanceMeters: Int) {
+        self.mode = mode
+        self.waypoints = waypoints
+        self.targetDistanceMeters = targetDistanceMeters
+    }
+
+    public var isValid: Bool {
+        let validCount = mode == .roundTrip ? waypoints.count == 1 : (2...Self.maximumWaypoints).contains(waypoints.count)
+        return validCount && waypoints.allSatisfy(\.isValid) &&
+            (mode != .roundTrip || (500...50000).contains(targetDistanceMeters))
+    }
+}
+
+public struct WatchRouteRequest: Codable, Sendable {
+    public enum Action: Codable, Sendable {
+        case calculate(seeds: [Int])
+        case save(id: UUID, name: String, preview: RoutePreview)
+    }
+
+    public let ownerID: UUID
+    public let draft: RouteDraft
+    public let action: Action
+
+    public init(ownerID: UUID, draft: RouteDraft, action: Action) {
+        self.ownerID = ownerID
+        self.draft = draft
+        self.action = action
+    }
+}
+
+public enum WatchRouteReply: Codable, Sendable {
+    case previews([RoutePreview])
+    case saved(SyncEnvelope<RouteTransfer>)
+    case failure(String)
+}
+
+public enum WatchRouteMessage {
+    public static let requestKey = "runloop.routePlanner.v1"
+    public static let replyKey = "runloop.routePlanner.reply.v1"
+    private static let sizeLimit = 48 * 1024
+
+    public static func encode<T: Encodable>(_ value: T) throws -> Data {
+        let data = try JSONEncoder().encode(value)
+        let compressed = try (data as NSData).compressed(using: .zlib) as Data
+        guard data.count <= RouteTransferKeys.byteLimit, compressed.count <= sizeLimit else {
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
+        return compressed
+    }
+
+    public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        guard data.count <= sizeLimit else { throw CocoaError(.fileReadTooLarge) }
+        let decompressed = try (data as NSData).decompressed(using: .zlib) as Data
+        guard decompressed.count <= RouteTransferKeys.byteLimit else { throw CocoaError(.fileReadTooLarge) }
+        return try JSONDecoder().decode(type, from: decompressed)
     }
 }
 

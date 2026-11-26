@@ -19,11 +19,14 @@ public struct WorkoutPoint: Codable, Equatable, Sendable {
     }
 }
 
+public enum WorkoutSource: String, Codable, Sendable { case phone, watch }
+
 public struct RecordedWorkout: Codable, Identifiable, Sendable {
     public let id: UUID
     public let ownerID: UUID?
     public let routeID: UUID?
     public let plannedRoute: RouteGeometry?
+    public let source: WorkoutSource?
     public let healthKitID: UUID?
     public let startedAt: Date
     public let endedAt: Date
@@ -39,7 +42,8 @@ public struct RecordedWorkout: Codable, Identifiable, Sendable {
 
     public init(id: UUID, ownerID: UUID?, routeID: UUID?, plannedRoute: RouteGeometry?, healthKitID: UUID?,
                 startedAt: Date, endedAt: Date, activeDurationSeconds: Double, distanceMeters: Double,
-                averageHeartRateBPM: Double?, points: [WorkoutPoint]) {
+                averageHeartRateBPM: Double?, points: [WorkoutPoint], source: WorkoutSource? = nil) {
+        self.source = source
         self.id = id
         self.ownerID = ownerID
         self.routeID = routeID
@@ -86,14 +90,19 @@ public struct PhoneWorkoutArchive {
         let envelope = try JSONDecoder().decode(SyncEnvelope<RecordedWorkout>.self, from: data)
         let workout = envelope.payload
         guard envelope.schemaVersion == 1, envelope.entityType == "workout", envelope.entityID == workout.id,
-              envelope.revision == 1, isValid(workout) else { throw CocoaError(.fileReadCorruptFile) }
+              envelope.revision == 1 else { throw CocoaError(.fileReadCorruptFile) }
+        try store(workout)
+        return WorkoutReceipt(workoutID: workout.id, ownerID: workout.ownerID)
+    }
+
+    public func store(_ workout: RecordedWorkout) throws {
+        guard isValid(workout) else { throw CocoaError(.fileReadCorruptFile) }
         let scope = directory(for: workout.ownerID)
         let file = scope.appending(path: workout.id.uuidString + ".json")
         if !isDeleted(workout.id), !FileManager.default.fileExists(atPath: file.path) {
             try FileManager.default.createDirectory(at: scope, withIntermediateDirectories: true)
             try JSONEncoder().encode(workout).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         }
-        return WorkoutReceipt(workoutID: workout.id, ownerID: workout.ownerID)
     }
 
     public func workouts(for ownerID: UUID?) throws -> [RecordedWorkout] {

@@ -57,3 +57,19 @@ private func sampleWorkout(id: UUID, owner: UUID?, pointSequence: Int = 0) -> Re
     #expect(try reopened.receive(data) == receipt)
     #expect(try reopened.workouts(for: nil).isEmpty)
 }
+
+@Test func localPhoneRunAndRetriedDeliveryShareOneHistoryEntry() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archive = PhoneWorkoutArchive(root: root)
+    let sample = sampleWorkout(id: UUID(), owner: nil)
+    let run = RecordedWorkout(id: sample.id, ownerID: nil, routeID: nil, plannedRoute: nil, healthKitID: nil,
+                              startedAt: sample.startedAt, endedAt: sample.endedAt, activeDurationSeconds: 4,
+                              distanceMeters: 10, averageHeartRateBPM: nil, points: sample.points, source: .phone)
+    try archive.store(run)
+    _ = try archive.receive(WorkoutTransfer.encode(run))
+    let stored = try PhoneWorkoutArchive(root: root).workouts(for: nil)
+    #expect(stored.map(\.id) == [run.id])
+    #expect(stored.first?.source == .phone)
+    #expect(stored.first?.points == sample.points)
+}

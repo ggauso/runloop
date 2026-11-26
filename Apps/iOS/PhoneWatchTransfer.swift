@@ -28,7 +28,12 @@ final class PhoneWatchTransfer: NSObject, WCSessionDelegate {
     private static let storageKey = "runloop.watchRouteTransfers"
     private static let pendingDeletionKey = "runloop.watchWorkoutDeletions"
     private var attempts = [UUID: Attempt]()
+    let runs = RunCompanion()
+    private var recent: [RunBrief] = []
     private var ownerID: UUID?
+    @ObservationIgnored weak var routeAccount: AccountAccess?
+    private(set) var watchRouteRevision = 0
+    private var accent = RunloopAccent.defaultChoice
     private var hasAccountState = false
     private var ready = false
     private var session: WCSession?
@@ -58,9 +63,23 @@ final class PhoneWatchTransfer: NSObject, WCSessionDelegate {
     }
 
     func setOwner(_ ownerID: UUID?) {
+        if self.ownerID != ownerID { recent = [] }
         self.ownerID = ownerID
+        runs.setOwner(ownerID)
         hasAccountState = true
         refreshWorkouts()
+        syncOwner()
+    }
+
+    func setRecent(_ list: [RunBrief], owner: UUID?) {
+        guard owner == ownerID, recent != list else { return }
+        recent = list
+        syncOwner()
+    }
+
+    func setAccent(_ value: RunloopAccent) {
+        guard value != accent else { return }
+        accent = value
         syncOwner()
     }
 
@@ -75,8 +94,10 @@ final class PhoneWatchTransfer: NSObject, WCSessionDelegate {
     }
 
     func removeWorkout(id: UUID, originalOwner: UUID?) throws {
+        let fromPhone = workouts.first { $0.id == id }?.source == .phone
         try workoutArchive.remove(id: id, originalOwner: originalOwner)
         refreshWorkouts()
+        guard !fromPhone else { return }
         let receipt = WorkoutReceipt(workoutID: id, ownerID: originalOwner)
         if !pendingDeletions.contains(receipt) {
             pendingDeletions.append(receipt)
@@ -139,9 +160,7 @@ final class PhoneWatchTransfer: NSObject, WCSessionDelegate {
 
     func send(_ route: SavedRoute) {
         guard ownerID == route.ownerID else { return }
-        let payload = RouteTransfer(ownerID: route.ownerID, name: route.name, distanceMeters: route.distanceMeters,
-                                    geometry: route.geometry, provider: route.provider)
-        let envelope = SyncEnvelope(entityType: "route", entityID: route.id, revision: route.revision, payload: payload)
+        let envelope = route.watchEnvelope
         let receipt = RouteReceipt(ownerID: route.ownerID, routeID: route.id, revision: route.revision, createdAt: envelope.createdAt)
         guard let session, ready, syncOwner() else {
             record(Attempt(receipt: receipt, name: route.name, delivery: .failed))
@@ -177,11 +196,93 @@ final class PhoneWatchTransfer: NSObject, WCSessionDelegate {
         }
     }
 
+    private func planRoute(_ data: Data) async -> WatchRouteReply {
+        guard let request = try? WatchRouteMessage.decode(WatchRouteRequest.self, from: data), request.draft.isValid else {
+            return .failure("Controlla i punti del percorso e riprova.")
+        }
+        guard let account = routeAccount, let client = account.client,
+              request.ownerID == ownerID, request.ownerID == account.session?.user.id else {
+            return .failure("Accedi a Runloop su iPhone e riprova.")
+        }
+        let draft = request.draft
+        switch request.action {
+        case .calculate(let seeds):
+            let service = RoutingService(client: client)
+            do {
+                let previews: [RoutePreview]
+                if draft.mode == .manual {
+                    previews = [try await service.manual(waypoints: draft.waypoints)]
+                } else if let start = draft.waypoints.first,
+                          (2...RouteDraft.loopBatchSize).contains(seeds.count), Set(seeds).count == seeds.count,
+                          seeds.allSatisfy({ (0...Int(Int32.max)).contains($0) }) {
+                    previews = try await service.loopAlternatives(start: start,
+                        waypoints: draft.mode == .waypointLoop ? draft.waypoints : nil,
+                        targetDistanceMeters: draft.targetDistanceMeters, seeds: seeds)
+                } else {
+                    return .failure("Impossibile preparare la ricerca. Riprova.")
+                }
+                guard request.ownerID == account.session?.user.id else {
+                    return .failure("Accedi a Runloop su iPhone e riprova.")
+                }
+                return .previews(previews)
+            } catch {
+                return .failure(RoutingService.message(for: error))
+            }
+        case .save(let id, let name, let preview):
+            let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard (1...80).contains(title.count), preview.distanceMeters.isFinite, preview.distanceMeters > 0,
+                  preview.provider == "graphhopper", (2...25000).contains(preview.coordinates.count),
+                  draft.mode == .manual || preview.coordinates.first == preview.coordinates.last else {
+                return .failure("Controlla il nome e il percorso, poi riprova.")
+            }
+            let route = SavedRoute(id: id, ownerID: request.ownerID, name: title, mode: draft.mode,
+                                   targetDistanceMeters: draft.mode == .roundTrip ? draft.targetDistanceMeters : nil,
+                                   distanceMeters: preview.distanceMeters, waypoints: draft.waypoints,
+                                   geometry: preview.geometry, provider: preview.provider, revision: 1)
+            do {
+                let stored = try await RouteLibraryService(client: client).saveFromWatch(route)
+                guard stored.ownerID == account.session?.user.id else {
+                    return .failure("Accedi a Runloop su iPhone e riprova.")
+                }
+                watchRouteRevision += 1
+                return .saved(stored.watchEnvelope)
+            } catch {
+                return .failure(RouteLibraryService.message(for: error))
+            }
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any],
+                             replyHandler: @escaping @Sendable ([String: Any]) -> Void) {
+        if let data = message[RunCompanion.key] as? Data {
+            Task { @MainActor in replyHandler([RunCompanion.key: runs.respond(data)]) }
+            return
+        }
+        guard let data = message[WatchRouteMessage.requestKey] as? Data else { replyHandler([:]); return }
+        Task { @MainActor in
+            let reply = await planRoute(data)
+            let encoded: Data?
+            if case .previews(let previews) = reply {
+                encoded = previews.indices.reversed().lazy.compactMap { index in
+                    try? WatchRouteMessage.encode(WatchRouteReply.previews(Array(previews.prefix(index + 1))))
+                }.first
+            } else {
+                encoded = try? WatchRouteMessage.encode(reply)
+            }
+            let response = encoded ?? (try? WatchRouteMessage.encode(WatchRouteReply.failure("Percorso troppo grande per il Watch. Prova con una distanza più breve.")))
+            replyHandler(response.map { [WatchRouteMessage.replyKey: $0] } ?? [:])
+        }
+    }
+
     @discardableResult
     private func syncOwner() -> Bool {
         guard ready, hasAccountState, let session else { return false }
         do {
-            try session.updateApplicationContext([RouteTransferKeys.owner: ownerID?.uuidString ?? ""])
+            try session.updateApplicationContext([
+                RouteTransferKeys.owner: ownerID?.uuidString ?? "",
+                RunBrief.contextKey: try JSONEncoder().encode(recent),
+                RunloopAccent.contextKey: accent.rawValue
+            ])
             return true
         } catch {
             return false

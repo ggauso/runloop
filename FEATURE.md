@@ -1,8 +1,41 @@
 # Runloop — Roadmap e task di sviluppo
 
-> **Versione:** 0.3 · **Data:** 24 novembre 2026 · **Stato:** flusso gratuito verificato sui simulatori
+> **Versione:** 0.4 · **Data:** 25 novembre 2026 · **Stato:** parità della corsa outdoor verificata sui simulatori
 >
 > Le decisioni di prodotto e tecniche sono in [SPEC.md](./SPEC.md). Questo file è la **checklist operativa** e la fonte di verità per lo stato di avanzamento.
+
+## Decisione di prodotto · correre con iPhone o Watch
+
+Il limite osservato nella versione 0.3 è concreto. Su iPhone «Allenamenti» apre uno storico e il dettaglio percorso offre l’invio al polso. Il solo Watch possiede il timer, il registratore GPS e il comando di avvio. Un runner che porta il telefono non può completare il flusso che ha appena preparato.
+
+| Bisogno | Confronto con il mercato | Decisione Runloop |
+| --- | --- | --- |
+| Partire subito | Runna distingue la corsa libera dall’allenamento pianificato. Strava registra al polso anche lasciando il telefono a casa. [Runna](https://support.runna.com/en/articles/6306200-how-to-use-your-apple-watch-with-runna) · [Strava](https://support.strava.com/en-us/articles/15401820-strava-apple-watch-app) | P0 gratuito. «Corsa libera» e «Inizia corsa» da un percorso su entrambi. Registrazione locale senza login o rete. |
+| Capire come sta andando la corsa | Su Runna si può seguire il percorso da entrambi gli schermi. Strava espone tempo, distanza e passo durante la registrazione. [Runna](https://support.runna.com/en/articles/11027305-how-to-follow-a-route-in-the-runna-app) · [Strava](https://support.strava.com/en-us/articles/15401820-strava-apple-watch-app) | P0 gratuito. Tempo attivo, distanza, passo medio, FC quando disponibile e traccia prevista riconoscibile durante la corsa. Pausa, ripresa e fine con conferma. |
+| Portare entrambi i dispositivi | Runna consente di leggere le metriche e intervenire sull’allenamento dall’altro dispositivo. Documenta anche il rischio di doppie registrazioni. [Controllo condiviso](https://support.runna.com/en/articles/13620108-apple-watch-workout-mirroring) · [Duplicati](https://support.runna.com/en/articles/9776737-handling-duplicate-activities) | P0 gratuito. Registra il dispositivo scelto alla partenza. Il compagno raggiungibile mostra lo stato e può comandare pausa, ripresa e termine. Alla disconnessione il registratore prosegue. |
+| Ritrovare il risultato | Runna conserva un riepilogo dell’attività, con giri e metriche disponibili. [Runna](https://support.runna.com/en/articles/6306200-how-to-use-your-apple-watch-with-runna) | P0 gratuito. Riepilogo immediato, ultime corse consultabili al polso, storico completo e GPX sul telefono. Una corsa corrisponde a un UUID anche dopo ritrasmissione. |
+| Allenarsi seguendo un programma | Runna aggiunge obiettivi di passo e avvisi audio durante le sedute. [Indicazioni audio](https://support.runna.com/en/articles/18491520-runna-labs-setting-up-and-managing-your-audio-cues) | Dopo il core. Valutare audio e sedute strutturate dopo la prova sul campo. Parziali e trend restano nel piano Pro ad acquisto unico. |
+
+### F-305 — Parità outdoor e sessione condivisa (P0)
+
+- [x] Avvio autonomo da ciascun dispositivo, libero e da un percorso, metriche, pausa/ripresa, conferma di termine e salvataggio.
+- [x] Secondo schermo con stato e comandi della stessa sessione quando le app sono raggiungibili. Un solo dispositivo scrive allenamento e traccia.
+- [x] Risultato locale su iPhone anche senza account, riepilogo e consultazione delle corse recenti su Watch.
+- [x] Verifica in simulazione dei due dispositivi, del percorso selezionato e del ritorno allo storico. La prova outdoor su dispositivi reali resta in F-501.
+
+### F-306 — Intensità e uscita dalla corsa (P0 gratuito)
+
+La schermata precedente faceva sparire la riga del battito senza campioni, presentava il tempo e le altre metriche con pesi poco distinti e offriva una sola uscita con salvataggio. Un Watch usato come semplice secondo schermo non attiva una registrazione cardiaca al polso.
+
+| Riferimento osservato | Decisione per Runloop |
+| --- | --- |
+| Apple Allenamento mostra cinque zone e distingue il battito dalla zona attiva. Runna porta la barra di intensità sul polso. [Apple](https://support.apple.com/it-it/guide/watch/apd897dccddf/watchos) · [Runna](https://support.runna.com/en/articles/6306200-how-to-use-your-apple-watch-with-runna) | Mostrare bpm, zona e confronto con un obiettivo facoltativo. Per le zone Runloop l’utente imposta la propria FC massima. Soglie del 60, 70, 80 e 90 per cento. |
+| Nell’artefatto Night Pitch la tavola «Loader e micro-interazioni» lega il feedback all’azione. «Dialog e avvisi» riserva una conferma alle decisioni irreversibili. [Prototipo](https://claude.ai/artifact/6gGzzv9B9txErVg6ogjNGg#page-dcb81aee8d83) | Un solo cruscotto per registratore e secondo schermo. Cifre stabili, transizioni brevi, feedback al cambio di stato e conferma esplicita per scartare. |
+
+- [x] Battito con data del campione, stati di attesa e segnale scaduto. Per usare il sensore al polso si può avviare sul Watch anche dall’iPhone quando entrambe le app sono raggiungibili.
+- [x] Cinque zone, FC massima e zona obiettivo modificabili durante la corsa. Al polso e sul telefono si vede lo stesso stato. Senza FC massima personale restano disponibili i bpm.
+- [x] Da «Termina» si può salvare, tornare alla corsa o confermare lo scarto. Lo scarto rimuove la traccia temporanea e non genera un allenamento in Salute, nello storico o nella coda cloud.
+- [x] Verificare sui simulatori interazione locale e remota, salvataggio e scarto. Verifica del sensore fisico in F-501.
 
 ## Come usare questo file
 
@@ -167,10 +200,10 @@
 **Dipende da:** F-104, F-201, F-202.
 
 - [x] Aggiungere modalità *Ad anello* con distanza target in km.
-- [x] Richiedere fino a quattro proposte variando il `round_trip.seed`.
+- [x] Richiedere fino a sei proposte variando il `round_trip.seed` in una sola ricerca.
 - [x] Mostrare geometria e **distanza effettiva** di ogni alternativa.
 - [x] Consentire la scelta della variante; se nessuna è valida, mostrare un errore utilizzabile.
-- [x] Rigenerare fino a quattro proposte senza salvare. Con almeno due punti in modalità Manuale, generare anche un circuito con le tappe nell'ordine scelto.
+- [x] Rigenerare fino a sei proposte senza salvare. Con almeno due punti in modalità Manuale, generare anche un circuito con le tappe nell'ordine scelto.
 - [x] Mostrare il tracciato progressivamente alla selezione di una variante, rispettando Riduci movimento.
 
 **Verifica** Sul simulatore iPhone, con obiettivo 5 km, il primo anello era da 5,50 km e la rigenerazione ha mostrato un altro itinerario da 3,82 km. Con due punti manuali, una prima proposta da 2,07 km è stata seguita da una nuova da 1,96 km mantenendo le due tappe. Verificati il disegno progressivo su registrazione e il vincolo SQL di chiusura.
@@ -234,6 +267,7 @@
 ### F-304 — Acquisire e conservare traccia GPS
 **Dipende da:** F-303.
 
+- [x] Prima di avviare una corsa sul Watch, chiedere il permesso di posizione se necessario. Con posizione negata o soggetta a restrizioni, offrire «Corri senza GPS» e «Annulla» anche sull’iPhone collegato. La scelta vale per la singola corsa.
 - [x] Registrare punti `lat/lon + timestamp + sequence` con Core Location; gestire precisione variabile.
 - [x] Conservare il tempo attivo cumulato con i punti quando disponibile per distinguere le pause nei parziali. Mantenerlo opzionale per tracce precedenti o incomplete.
 - [x] Collegare la traccia alla sessione HealthKit con `HKWorkoutRouteBuilder` quando autorizzato.
@@ -458,3 +492,5 @@ Un task può essere segnato `[x]` soltanto se:
 | 2026-11-24 | F-404 | DONE | Stati, retry e cancellazione, test Swift e SQL | RLS, cascata sui punti e blocco dei replay verificati |
 | 2026-11-24 | F-405 | DONE | GPX condivisibile, archivio percorsi locale, prove UI e validazione GPX 1.1 | Percorso e corsa esportati dal simulatore con gateway spento |
 | 2026-11-24 | F-501 | BLOCKED | Flusso gratuito provato su iPhone 17 e Watch Series 11 simulati | Provisioning e collaudo hardware in attesa della disponibilità dei dispositivi |
+| 2026-11-25 | F-305 | DONE | Registrazione condivisa iOS/watchOS, storico, archivio e 12 test RunloopCore superati | Corsa libera e su percorso da ciascun simulatore, pausa/ripresa/termine dal compagno in entrambe le direzioni, salvataggio in Salute simulato e una sola voce per corsa dopo la riconnessione. Prova fisica in F-501. |
+| 2026-11-25 | F-306 | DONE | Cruscotto e zone condivisi, preferenze per account, registrazione al polso avviata da iPhone. 14 test RunloopCore superati | Verificati il battito sintetico su entrambi gli schermi, la FC massima modificata con la Digital Crown, il recupero con Watch spento e la conferma di scarto. Durante le prove, ogni salvataggio ha prodotto una sola corsa e ogni scarto zero allenamenti e zero tracce residue per quella sessione. Sensore reale in F-501. |

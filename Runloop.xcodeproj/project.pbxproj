@@ -7,6 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3BDA207AE1822BD8EC26EB01 /* RouteMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EB00 /* RouteMap.swift */; };
+		CA0000000000000000000005 /* RunCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000003 /* RunCompanion.swift */; };
+		CB0000000000000000000005 /* RunSessionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0000000000000000000003 /* RunSessionScreen.swift */; };
+		3BDA207AE1822BD8EC26EB02 /* RouteMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EB00 /* RouteMap.swift */; };
+		CA0000000000000000000004 /* RunCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000003 /* RunCompanion.swift */; };
+		CB0000000000000000000004 /* RunSessionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0000000000000000000003 /* RunSessionScreen.swift */; };
+		3BDA207AE1822BD8EC26EB04 /* WatchRoutePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EB03 /* WatchRoutePlanner.swift */; };
+		EF11259013AE4CCB95AFB001 /* BarlowCondensed-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EF11259013AE4CCB95AFB005 /* BarlowCondensed-Bold.ttf */; };
+		EF11259013AE4CCB95AFB002 /* BarlowCondensed-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EF11259013AE4CCB95AFB005 /* BarlowCondensed-Bold.ttf */; };
+		EF11259013AE4CCB95AFB003 /* Barlow-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = EF11259013AE4CCB95AFB006 /* Barlow-OFL.txt */; };
+		EF11259013AE4CCB95AFB004 /* Barlow-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = EF11259013AE4CCB95AFB006 /* Barlow-OFL.txt */; };
 		129A57D074A04DA0470A5EB2 /* RunloopWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E841BE0D719B0B08D54D659B /* RunloopWatchApp.swift */; };
 		430CA99FD15546C7A2415B3A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA5EFF0955721B705D4E5F55 /* Foundation.framework */; };
 		5D578643F25C007503124BDB /* RunloopApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EADF /* RunloopApp.swift */; };
@@ -21,8 +32,10 @@
 		5D578643F25C007503124BE0 /* PhoneWatchTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE6 /* PhoneWatchTransfer.swift */; };
 		5D578643F25C007503124BE1 /* WatchRouteInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE7 /* WatchRouteInbox.swift */; };
 		5D578643F25C007503124BE2 /* Runloop Watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 6C122703ABA39B7230DDBB02 /* Runloop Watch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		5D578643F25C007503124BE6 /* WatchWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE8 /* WatchWorkout.swift */; };
-		5D578643F25C007503124BE7 /* WatchRunRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEB /* WatchRunRecording.swift */; };
+		5D578643F25C007503124BE6 /* RunWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE8 /* RunWorkout.swift */; };
+		CA0000000000000000000001 /* RunWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAE8 /* RunWorkout.swift */; };
+		5D578643F25C007503124BE7 /* RunRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEB /* RunRecording.swift */; };
+		CA0000000000000000000002 /* RunRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEB /* RunRecording.swift */; };
 		5D578643F25C007503124BE8 /* WatchWorkoutOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEC /* WatchWorkoutOutbox.swift */; };
 		5D578643F25C007503124BE9 /* WorkoutCloudSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAED /* WorkoutCloudSync.swift */; };
 		5D578643F25C007503124BEA /* WorkoutHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BDA207AE1822BD8EC26EAEE /* WorkoutHistoryView.swift */; };
@@ -57,6 +70,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		3BDA207AE1822BD8EC26EB00 /* RouteMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RouteMap.swift; path = Apps/Shared/RouteMap.swift; sourceTree = "<group>"; };
+		CA0000000000000000000003 /* RunCompanion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RunCompanion.swift; path = Apps/Shared/RunCompanion.swift; sourceTree = "<group>"; };
+		CB0000000000000000000003 /* RunSessionScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RunSessionScreen.swift; path = Apps/Shared/RunSessionScreen.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EB03 /* WatchRoutePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchRoutePlanner.swift; path = Apps/watchOS/WatchRoutePlanner.swift; sourceTree = "<group>"; };
+		EF11259013AE4CCB95AFB005 /* BarlowCondensed-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "BarlowCondensed-Bold.ttf"; path = "Apps/Shared/Fonts/BarlowCondensed-Bold.ttf"; sourceTree = "<group>"; };
+		EF11259013AE4CCB95AFB006 /* Barlow-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "Barlow-OFL.txt"; path = "Apps/Shared/Fonts/Barlow-OFL.txt"; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EADF /* RunloopApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RunloopApp.swift; path = Apps/iOS/RunloopApp.swift; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAE0 /* RouteStartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RouteStartView.swift; path = Apps/iOS/RouteStartView.swift; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAE1 /* AccountAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AccountAccess.swift; path = Apps/iOS/AccountAccess.swift; sourceTree = "<group>"; };
@@ -71,10 +90,10 @@
 		E841BE0D719B0B08D54D659B /* RunloopWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RunloopWatchApp.swift; path = Apps/watchOS/RunloopWatchApp.swift; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAE6 /* PhoneWatchTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhoneWatchTransfer.swift; path = Apps/iOS/PhoneWatchTransfer.swift; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAE7 /* WatchRouteInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchRouteInbox.swift; path = Apps/watchOS/WatchRouteInbox.swift; sourceTree = "<group>"; };
-		3BDA207AE1822BD8EC26EAE8 /* WatchWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchWorkout.swift; path = Apps/watchOS/WatchWorkout.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAE8 /* RunWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RunWorkout.swift; path = Apps/Shared/RunWorkout.swift; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAE9 /* RunloopWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = RunloopWatch.entitlements; path = Apps/watchOS/RunloopWatch.entitlements; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAEA /* Watch Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Watch Info.plist"; path = Apps/watchOS/Info.plist; sourceTree = "<group>"; };
-		3BDA207AE1822BD8EC26EAEB /* WatchRunRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchRunRecording.swift; path = Apps/watchOS/WatchRunRecording.swift; sourceTree = "<group>"; };
+		3BDA207AE1822BD8EC26EAEB /* RunRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RunRecording.swift; path = Apps/Shared/RunRecording.swift; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAEC /* WatchWorkoutOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchWorkoutOutbox.swift; path = Apps/watchOS/WatchWorkoutOutbox.swift; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAED /* WorkoutCloudSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutCloudSync.swift; path = Apps/iOS/WorkoutCloudSync.swift; sourceTree = "<group>"; };
 		3BDA207AE1822BD8EC26EAEE /* WorkoutHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutHistoryView.swift; path = Apps/iOS/WorkoutHistoryView.swift; sourceTree = "<group>"; };
@@ -146,6 +165,9 @@
 				987CAEAE8665F48C3565FC9D /* Frameworks */,
 				3BDA207AE1822BD8EC26EADF /* RunloopApp.swift */,
 				3BDA207AE1822BD8EC26EAE0 /* RouteStartView.swift */,
+				3BDA207AE1822BD8EC26EB00 /* RouteMap.swift */,
+				CA0000000000000000000003 /* RunCompanion.swift */,
+				CB0000000000000000000003 /* RunSessionScreen.swift */,
 				3BDA207AE1822BD8EC26EAE1 /* AccountAccess.swift */,
 				3BDA207AE1822BD8EC26EAE2 /* Debug.xcconfig */,
 				3BDA207AE1822BD8EC26EAE3 /* Info.plist */,
@@ -156,12 +178,15 @@
 				3BDA207AE1822BD8EC26EAEE /* WorkoutHistoryView.swift */,
 				3BDA207AE1822BD8EC26EAEF /* GPXShareButton.swift */,
 				3BDA207AE1822BD8EC26EAF0 /* RunloopStyle.swift */,
+				EF11259013AE4CCB95AFB005 /* BarlowCondensed-Bold.ttf */,
+				EF11259013AE4CCB95AFB006 /* Barlow-OFL.txt */,
 				E841BE0D719B0B08D54D659B /* RunloopWatchApp.swift */,
 				3BDA207AE1822BD8EC26EAE7 /* WatchRouteInbox.swift */,
-				3BDA207AE1822BD8EC26EAE8 /* WatchWorkout.swift */,
+				3BDA207AE1822BD8EC26EB03 /* WatchRoutePlanner.swift */,
+				3BDA207AE1822BD8EC26EAE8 /* RunWorkout.swift */,
 				3BDA207AE1822BD8EC26EAE9 /* RunloopWatch.entitlements */,
 				3BDA207AE1822BD8EC26EAEA /* Watch Info.plist */,
-				3BDA207AE1822BD8EC26EAEB /* WatchRunRecording.swift */,
+				3BDA207AE1822BD8EC26EAEB /* RunRecording.swift */,
 				3BDA207AE1822BD8EC26EAEC /* WatchWorkoutOutbox.swift */,
 			);
 			sourceTree = "<group>";
@@ -249,6 +274,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EF11259013AE4CCB95AFB001 /* BarlowCondensed-Bold.ttf in Resources */,
+				EF11259013AE4CCB95AFB003 /* Barlow-OFL.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -256,6 +283,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EF11259013AE4CCB95AFB002 /* BarlowCondensed-Bold.ttf in Resources */,
+				EF11259013AE4CCB95AFB004 /* Barlow-OFL.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -267,7 +296,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				5D578643F25C007503124BDB /* RunloopApp.swift in Sources */,
+				CA0000000000000000000002 /* RunRecording.swift in Sources */,
+				CA0000000000000000000001 /* RunWorkout.swift in Sources */,
 				5D578643F25C007503124BDC /* RouteStartView.swift in Sources */,
+				3BDA207AE1822BD8EC26EB01 /* RouteMap.swift in Sources */,
+				CA0000000000000000000005 /* RunCompanion.swift in Sources */,
+				CB0000000000000000000005 /* RunSessionScreen.swift in Sources */,
 				5D578643F25C007503124BDD /* AccountAccess.swift in Sources */,
 				5D578643F25C007503124BDE /* RoutingService.swift in Sources */,
 				5D578643F25C007503124BDF /* RouteLibrary.swift in Sources */,
@@ -285,8 +319,12 @@
 			files = (
 				129A57D074A04DA0470A5EB2 /* RunloopWatchApp.swift in Sources */,
 				5D578643F25C007503124BE1 /* WatchRouteInbox.swift in Sources */,
-				5D578643F25C007503124BE6 /* WatchWorkout.swift in Sources */,
-				5D578643F25C007503124BE7 /* WatchRunRecording.swift in Sources */,
+				3BDA207AE1822BD8EC26EB02 /* RouteMap.swift in Sources */,
+				CA0000000000000000000004 /* RunCompanion.swift in Sources */,
+				CB0000000000000000000004 /* RunSessionScreen.swift in Sources */,
+				3BDA207AE1822BD8EC26EB04 /* WatchRoutePlanner.swift in Sources */,
+				5D578643F25C007503124BE6 /* RunWorkout.swift in Sources */,
+				5D578643F25C007503124BE7 /* RunRecording.swift in Sources */,
 				5D578643F25C007503124BE8 /* WatchWorkoutOutbox.swift in Sources */,
 				5D578643F25C007503124BED /* RunloopStyle.swift in Sources */,
 			);
@@ -370,7 +408,7 @@
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Runloop legge distanza e frequenza cardiaca per mostrarti le metriche durante la corsa.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Runloop salva le tue corse nell’app Salute.";
 				INFOPLIST_FILE = Apps/watchOS/Info.plist;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione durante la corsa per registrare distanza e traccia GPS.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione per scegliere la partenza e registrare distanza e traccia durante la corsa.";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER)";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(RUNLOOP_BUNDLE_IDENTIFIER)";
 				RUNLOOP_BUNDLE_IDENTIFIER = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER).watchkitapp";
@@ -455,7 +493,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = UTZ3WTZ42X;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione per proporti il punto di partenza.";
+				CODE_SIGN_ENTITLEMENTS = Apps/iOS/Configuration/Runloop.entitlements;
+                INFOPLIST_KEY_NSHealthShareUsageDescription = "Runloop mostra distanza e frequenza cardiaca disponibili durante la corsa.";
+                INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Runloop salva le tue corse e le relative tracce in Salute.";
+                INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione per scegliere la partenza e registrare la traccia durante la corsa.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_FILE = Apps/iOS/Configuration/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -483,7 +524,7 @@
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Runloop legge distanza e frequenza cardiaca per mostrarti le metriche durante la corsa.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Runloop salva le tue corse nell’app Salute.";
 				INFOPLIST_FILE = Apps/watchOS/Info.plist;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione durante la corsa per registrare distanza e traccia GPS.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione per scegliere la partenza e registrare distanza e traccia durante la corsa.";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER)";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(RUNLOOP_BUNDLE_IDENTIFIER)";
 				RUNLOOP_BUNDLE_IDENTIFIER = "$(RUNLOOP_IOS_BUNDLE_IDENTIFIER).watchkitapp";
@@ -504,7 +545,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = UTZ3WTZ42X;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione per proporti il punto di partenza.";
+				CODE_SIGN_ENTITLEMENTS = Apps/iOS/Configuration/Runloop.entitlements;
+                INFOPLIST_KEY_NSHealthShareUsageDescription = "Runloop mostra distanza e frequenza cardiaca disponibili durante la corsa.";
+                INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Runloop salva le tue corse e le relative tracce in Salute.";
+                INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Runloop usa la posizione per scegliere la partenza e registrare la traccia durante la corsa.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_FILE = Apps/iOS/Configuration/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;

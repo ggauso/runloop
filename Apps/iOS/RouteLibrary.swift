@@ -40,6 +40,13 @@ struct SavedRoute: Codable, Identifiable, Equatable, Sendable {
     var preview: RoutePreview {
         RoutePreview(coordinates: geometry.coordinates, distanceMeters: distanceMeters, provider: provider)
     }
+
+    var watchEnvelope: SyncEnvelope<RouteTransfer> {
+        let payload = RouteTransfer(ownerID: ownerID, name: name, distanceMeters: distanceMeters,
+                                    geometry: geometry, provider: provider, mode: mode,
+                                    waypoints: waypoints, targetDistanceMeters: targetDistanceMeters)
+        return SyncEnvelope(entityType: "route", entityID: id, revision: revision, payload: payload)
+    }
 }
 
 struct RouteLibraryService {
@@ -64,6 +71,13 @@ struct RouteLibraryService {
             .select().single().execute().value
     }
 
+    func saveFromWatch(_ route: SavedRoute) async throws -> SavedRoute {
+        // A repeat after a lost reply returns the same route without overwriting any edits.
+        _ = try await client.from("routes").upsert(route, onConflict: "id", ignoreDuplicates: true).execute()
+        return try await client.from("routes").select().eq("id", value: route.id)
+            .eq("owner_id", value: route.ownerID).single().execute().value
+    }
+
     func delete(_ route: SavedRoute) async throws {
         _ = try await client.from("routes").delete().eq("id", value: route.id).execute()
     }
@@ -79,38 +93,33 @@ struct RouteLibraryService {
 
 struct RouteLibraryView: View {
     @Environment(AccountAccess.self) private var access
+    @Environment(PhoneWatchTransfer.self) private var watchTransfer
     @State private var routes: [SavedRoute] = []
     @State private var snapshotOwner: UUID?
     @State private var isLoading = false
     @State private var message: String?
     @State private var revision = 0
-    @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 49.0
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("RUNLOOP", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                        .font(.caption.weight(.heavy)).tracking(2.8)
-                        .foregroundStyle(RunloopStyle.accent)
-                    Text("I miei percorsi")
-                        .font(.system(size: titleSize, weight: .black)).tracking(-2)
-                        .accessibilityAddTraits(.isHeader)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 12) {
+                        libraryTitle.fixedSize(horizontal: true, vertical: false)
+                        Spacer(minLength: 4)
+                        newRouteLink.fixedSize(horizontal: true, vertical: false)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        libraryTitle
+                        newRouteLink
+                    }
                 }
 
-                NavigationLink {
-                    RouteStartView(onSave: replace)
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "plus")
-                        Text("Nuovo percorso")
-                        Spacer(minLength: 4)
-                        Image(systemName: "arrow.up.right").font(.caption.weight(.heavy))
-                    }
-                    .padding(.horizontal, 8)
+                Button("Corsa libera", systemImage: "figure.run") {
+                    watchTransfer.runs.start(route: nil, ownerID: access.session?.user.id)
                 }
                 .buttonStyle(RunloopButtonStyle())
-                .accessibilityIdentifier("library.newRoute")
+                .accessibilityIdentifier("run.free")
 
                 if let owner = access.session?.user.id {
                     if let latest = owner == snapshotOwner ? routes.first : nil {
@@ -126,12 +135,15 @@ struct RouteLibraryView: View {
                     } else if isLoading || owner != snapshotOwner {
                         ProgressView("Caricamento percorsi…")
                     } else if message == nil {
-                        ContentUnavailableView("Nessun percorso salvato", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                        Text("Nessun percorso salvato")
+                            .font(.subheadline)
+                            .foregroundStyle(RunloopStyle.muted)
                     }
                     if let message {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(message).font(.footnote).foregroundStyle(RunloopStyle.muted)
-                            Button("Riprova") { Task { await refresh() } }
+                            Button("Riprova", systemImage: "arrow.clockwise") { Task { await refresh() } }
+                                .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
                         }
                     }
                 } else if !access.isRestoring {
@@ -148,7 +160,27 @@ struct RouteLibraryView: View {
         .navigationTitle("I miei percorsi")
         .toolbar(.hidden, for: .navigationBar)
         .task(id: access.session?.user.id) { await refresh() }
+        .onChange(of: watchTransfer.watchRouteRevision) {
+            revision += 1
+            Task { await refresh() }
+        }
         .refreshable { await refresh() }
+    }
+
+    private var libraryTitle: some View {
+        Text("Percorsi")
+            .font(RunloopType.screenTitle)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var newRouteLink: some View {
+        NavigationLink {
+            RouteStartView(onSave: replace)
+        } label: {
+            Label("Nuovo percorso", systemImage: "plus")
+        }
+        .buttonStyle(RunloopButtonStyle(compact: true))
+        .accessibilityIdentifier("library.newRoute")
     }
 
     private func routeLink(_ route: SavedRoute, featured: Bool) -> some View {
@@ -156,38 +188,43 @@ struct RouteLibraryView: View {
             SavedRouteDetail(route: route, onChange: replace, onDelete: remove)
         } label: {
             if featured {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("PERCORSO PIÙ RECENTE")
-                            .font(.caption2.weight(.heavy)).tracking(1.7)
-                            .foregroundStyle(RunloopStyle.muted)
-                        Spacer()
-                        Image(systemName: "arrow.up.right").font(.subheadline.weight(.bold))
-                    }
-                    .padding(16)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Ultimo percorso")
+                        .font(RunloopType.readout)
+                        .foregroundStyle(RunloopStyle.muted)
                     RunloopTrace(coordinates: route.geometry.coordinates, showsGrid: true, lineWidth: 3.5)
-                        .frame(height: 137)
-                        .background(RunloopStyle.canvas.opacity(0.6))
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(route.name).font(.headline)
-                        Spacer(minLength: 0)
-                        Text(routeDistanceText(route.distanceMeters)).font(.title3.weight(.heavy)).monospacedDigit()
+                        .frame(height: 154)
+                        .background(RunloopStyle.panel, in: .rect(cornerRadius: RunloopStyle.radius))
+                        .clipShape(.rect(cornerRadius: RunloopStyle.radius))
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(route.name).font(RunloopType.sectionTitle)
+                            Text(routeSummary(distance: route.distanceMeters, mode: route.mode))
+                                .font(RunloopType.readout)
+                                .foregroundStyle(RunloopStyle.muted)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(RunloopStyle.muted)
                     }
-                    .padding(16)
+                    .padding(.bottom, 8)
                 }
                 .foregroundStyle(RunloopStyle.text)
-                .clipShape(.rect(cornerRadius: RunloopStyle.radius))
-                .runloopPanel()
+                .contentShape(.rect)
             } else {
                 HStack(spacing: 14) {
-                    RunloopTrace(coordinates: route.geometry.coordinates, lineWidth: 2)
-                        .frame(width: 48, height: 44)
-                        .runloopPanel()
-                    Text(route.name).font(.subheadline.weight(.semibold))
+                    RunloopTrace(coordinates: route.geometry.coordinates, color: RunloopStyle.muted, lineWidth: 2)
+                        .frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(route.name).font(.subheadline.weight(.semibold))
+                        Text(routeSummary(distance: route.distanceMeters, mode: route.mode))
+                            .font(RunloopType.readout)
+                            .foregroundStyle(RunloopStyle.muted)
+                    }
                     Spacer(minLength: 0)
-                    Text(routeDistanceText(route.distanceMeters)).font(.footnote).monospacedDigit()
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
                         .foregroundStyle(RunloopStyle.muted)
-                    Image(systemName: "chevron.right").font(.caption2.weight(.bold))
                 }
                 .foregroundStyle(RunloopStyle.text)
                 .padding(.vertical, 10)
@@ -258,6 +295,8 @@ private enum RouteCache {
 }
 
 private struct SavedRouteDetail: View {
+    @Environment(\.runloopAccent) private var accent
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(AccountAccess.self) private var access
     @Environment(PhoneWatchTransfer.self) private var watchTransfer
     @Environment(\.dismiss) private var dismiss
@@ -277,20 +316,33 @@ private struct SavedRouteDetail: View {
             if route.ownerID == access.session?.user.id {
                 Map(initialPosition: .rect(routeMapRect(route.geometry.coordinates))) {
                     MapPolyline(coordinates: route.geometry.coordinates.map(\.location)).stroke(.black.opacity(0.8), lineWidth: 8)
-                    MapPolyline(coordinates: route.geometry.coordinates.map(\.location)).stroke(RunloopStyle.accent, lineWidth: 4)
+                    MapPolyline(coordinates: route.geometry.coordinates.map(\.location)).stroke(accent, lineWidth: 4)
                     if let start = route.geometry.coordinates.first {
-                        Marker("Partenza", systemImage: "flag.fill", coordinate: start.location).tint(RunloopStyle.accent)
+                        Annotation("Partenza", coordinate: start.location, anchor: .bottom) { RouteMapPin(index: 0) }
                     }
                 }
                 .mapStyle(.standard(emphasis: .muted))
                 .id(route.revision)
                 .safeAreaInset(edge: .bottom) { details }
                 .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
+                    ToolbarItem(placement: .principal) {
+                        Text(route.name)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        NavigationLink {
+                            RouteStartView(existing: route, onSave: replace)
+                        } label: {
+                            Label("Modifica percorso", systemImage: "pencil")
+                                .labelStyle(.iconOnly)
+                        }
+                        .disabled(isWorking)
+                        .accessibilityIdentifier("route.edit")
+
                         Menu("Azioni percorso", systemImage: "ellipsis.circle") {
-                            NavigationLink("Modifica percorso") {
-                                RouteStartView(existing: route, onSave: replace)
-                            }
                             Button("Rinomina") { name = route.name; showsRename = true }
                             Button("Elimina", role: .destructive) { showsDelete = true }
                         }
@@ -315,34 +367,49 @@ private struct SavedRouteDetail: View {
     }
 
     private var details: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(routeDistanceText(route.distanceMeters)).font(.system(.largeTitle, weight: .black)).monospacedDigit()
-                Spacer(minLength: 6)
+        let summary = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+        let actions = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 10))
+        return VStack(alignment: .leading, spacing: 8) {
+            summary {
+                Text(routeDistanceText(route.distanceMeters)).font(RunloopType.metric)
+                    .foregroundStyle(RunloopStyle.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if route.provider == "graphhopper" {
                     Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
                         .font(.caption2).foregroundStyle(RunloopStyle.muted)
                 }
             }
-            Button("Invia al Watch", systemImage: "applewatch") { watchTransfer.send(route) }
-                .buttonStyle(RunloopButtonStyle())
+            Button("Inizia corsa", systemImage: "figure.run") {
+                watchTransfer.runs.start(route: route.watchEnvelope, ownerID: access.session?.user.id)
+            }
+            .buttonStyle(RunloopButtonStyle())
+            .accessibilityIdentifier("run.route")
+            actions {
+                Button("Invia al Watch", systemImage: "applewatch") { watchTransfer.send(route) }
+                    .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
+                GPXShareButton(name: route.name, points: route.geometry.coordinates.map { GPXPoint(coordinate: $0) },
+                               creditsOpenStreetMap: route.provider == "graphhopper")
+                    .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
+            }
             if let watchStatus {
                 Label(watchStatus.title, systemImage: watchStatus == .received ? "checkmark.circle.fill" : watchStatus == .failed ? "exclamationmark.circle" : "arrow.trianglehead.clockwise")
                     .font(.footnote)
-                    .foregroundStyle(watchStatus == .received ? RunloopStyle.accent : RunloopStyle.muted)
+                    .foregroundStyle(watchStatus == .received ? accent : watchStatus == .failed ? RunloopStyle.danger : RunloopStyle.muted)
                     .contentTransition(.opacity)
             }
-            GPXShareButton(name: route.name, points: route.geometry.coordinates.map { GPXPoint(coordinate: $0) },
-                           creditsOpenStreetMap: route.provider == "graphhopper")
             if isWorking { ProgressView() }
-            if let message { Text(message).font(.subheadline).foregroundStyle(.secondary) }
+            if let message { Text(message).font(.subheadline).foregroundStyle(RunloopStyle.danger) }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RunloopStyle.canvas)
         .overlay(alignment: .top) { Divider().overlay(RunloopStyle.border) }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: watchStatus)
+        .animation(reduceMotion ? nil : RunloopMotion.status, value: watchStatus)
         .sensoryFeedback(.success, trigger: watchStatus) { _, current in current == .received }
     }
 
@@ -374,15 +441,4 @@ private struct SavedRouteDetail: View {
             dismiss()
         } catch { message = RouteLibraryService.message(for: error) }
     }
-}
-
-func routeDistanceText(_ meters: Double) -> String {
-    Measurement(value: meters / 1000, unit: UnitLength.kilometers)
-        .formatted(.measurement(width: .abbreviated, usage: .asProvided,
-                                numberFormatStyle: .number.precision(.fractionLength(0...2))))
-}
-
-func routeMapRect(_ coordinates: [RouteCoordinate]) -> MKMapRect {
-    let rect = MKPolyline(coordinates: coordinates.map(\.location), count: coordinates.count).boundingMapRect
-    return rect.insetBy(dx: -max(240, rect.width * 0.15), dy: -max(240, rect.height * 0.15))
 }

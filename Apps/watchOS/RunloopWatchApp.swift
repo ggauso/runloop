@@ -5,22 +5,31 @@ import SwiftUI
 @main
 struct RunloopApp: App {
     @State private var inbox = WatchRouteInbox()
-    @State private var workout = WatchWorkout()
+    @AppStorage(RunloopAccent.storageKey) private var accentChoice = RunloopAccent.defaultChoice
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             Group {
-                if workout.isPresented {
-                    WatchWorkoutView(workout: workout)
+                if inbox.runs.isPresented {
+                    RunSessionScreen(runs: inbox.runs)
                 } else {
                     library
                 }
             }
             .preferredColorScheme(.dark)
-            .tint(RunloopStyle.accent)
-            .onChange(of: workout.phase) { _, phase in
-                if phase == .saved { inbox.syncWorkouts() }
+            .modifier(RequestLocationPermissionOnLaunch())
+            .tint(accentChoice.color)
+            .environment(\.runloopAccent, accentChoice.color)
+            .onChange(of: inbox.runs.local.phase) { _, phase in
+                if phase == .discarded { inbox.runs.rememberCompletion() }
+                if phase == .saved {
+                    inbox.runs.rememberCompletion()
+                    inbox.syncWorkouts()
+                }
+            }
+            .task(id: scenePhase) {
+                if scenePhase == .active { await inbox.runs.monitor() }
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { inbox.syncWorkouts() }
@@ -33,10 +42,10 @@ struct RunloopApp: App {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Button("Corsa libera", systemImage: "figure.run") {
-                        workout.start(route: nil, ownerID: inbox.currentOwner)
+                        inbox.runs.start(route: nil, ownerID: inbox.currentOwner)
                     }
                     .buttonStyle(RunloopButtonStyle())
-                    .disabled(workout.isPresented)
+                    .disabled(inbox.runs.isPresented)
 
                     if inbox.workouts.pendingCount > 0 {
                         Button(inbox.workouts.needsRetry ? "Riprova invio corse" : "Corse in attesa di invio", systemImage: "arrow.trianglehead.clockwise") {
@@ -45,44 +54,45 @@ struct RunloopApp: App {
                         .buttonStyle(RunloopButtonStyle(kind: .secondary))
                     }
 
-                    Text("Percorsi")
-                        .font(.subheadline.weight(.heavy))
-                        .accessibilityAddTraits(.isHeader)
+                    HStack(spacing: 6) {
+                        Text("Percorsi").font(RunloopType.sectionTitle).accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: 0)
+                        NavigationLink {
+                            WatchRoutePlanner(inbox: inbox)
+                        } label: {
+                            Label("Nuovo", systemImage: "plus")
+                                .accessibilityLabel("Nuovo percorso")
+                        }
+                        .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
+                        .accessibilityIdentifier("watch.library.newRoute")
+                    }
                     if inbox.readFailed {
                         Text("Impossibile leggere i percorsi.")
                             .font(.footnote).foregroundStyle(RunloopStyle.muted)
                     } else if inbox.routes.isEmpty {
-                        Text("Invia un percorso dall’iPhone.")
+                        Text("Crea il primo percorso qui o invialo dall’iPhone.")
                             .font(.footnote).foregroundStyle(RunloopStyle.muted)
                     }
                     ForEach(inbox.routes, id: \.entityID) { route in
                         NavigationLink {
                             if let latest = inbox.routes.first(where: { $0.entityID == route.entityID }) {
-                                WatchRouteDetail(route: latest) {
-                                    workout.start(route: latest, ownerID: inbox.currentOwner)
+                                WatchRouteDetail(route: latest, inbox: inbox) {
+                                    inbox.runs.start(route: latest, ownerID: inbox.currentOwner)
                                 }
                             } else {
                                 ContentUnavailableView("Percorso non disponibile", systemImage: "map")
                             }
                         } label: {
-                            HStack(spacing: 8) {
-                                RunloopTrace(coordinates: route.payload.geometry.coordinates, lineWidth: 2)
-                                    .frame(width: 26, height: 38)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(route.payload.name).font(.footnote.weight(.bold))
-                                    Text(watchDistance(route.payload.distanceMeters))
-                                        .font(.caption2).monospacedDigit().foregroundStyle(RunloopStyle.muted)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right").font(.caption2.weight(.bold))
-                            }
-                            .padding(9)
-                            .frame(minHeight: 44)
-                            .foregroundStyle(RunloopStyle.text)
-                            .runloopPanel()
+                            routeRow(route.payload, featured: route.entityID == inbox.routes.first?.entityID)
                         }
                         .buttonStyle(RunloopPressStyle())
                     }
+                    NavigationLink {
+                        WatchRunHistory(inbox: inbox)
+                    } label: {
+                        Label("Allenamenti", systemImage: "clock.arrow.circlepath")
+                    }
+                    .buttonStyle(RunloopButtonStyle(kind: .secondary))
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -91,10 +101,41 @@ struct RunloopApp: App {
             .navigationTitle("Runloop")
         }
     }
+
+    private func routeRow(_ route: RouteTransfer, featured: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if featured {
+                RunloopTrace(coordinates: route.geometry.coordinates, showsGrid: true, lineWidth: 2.5)
+                    .frame(height: 62)
+                    .clipShape(.rect(cornerRadius: RunloopStyle.radius))
+                    .runloopPanel()
+            }
+            HStack(spacing: 8) {
+                if !featured {
+                    RunloopTrace(coordinates: route.geometry.coordinates, color: RunloopStyle.muted, lineWidth: 2)
+                        .frame(width: 24, height: 32)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(route.name).font(.footnote.weight(.bold))
+                    Text(routeSummary(distance: route.distanceMeters, mode: route.mode)).font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(RunloopStyle.muted)
+            }
+            .padding(.vertical, 2)
+        }
+        .frame(minHeight: 44)
+        .foregroundStyle(RunloopStyle.text)
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+    }
 }
 
 private struct WatchRouteDetail: View {
+    @Environment(\.runloopAccent) private var accent
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let route: SyncEnvelope<RouteTransfer>
+    let inbox: WatchRouteInbox
     let start: () -> Void
     @State private var showsMap = false
 
@@ -105,17 +146,20 @@ private struct WatchRouteDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text(route.payload.name).font(.headline.weight(.heavy))
-                Text(watchDistance(route.payload.distanceMeters))
-                    .font(.title2.weight(.black)).monospacedDigit()
-                    .foregroundStyle(RunloopStyle.accent)
+                Text(route.payload.name).font(RunloopType.sectionTitle).accessibilityAddTraits(.isHeader)
+                Text(routeDistanceText(route.payload.distanceMeters))
+                    .font(RunloopType.compactMetric)
+                    .foregroundStyle(accent)
 
                 if showsMap {
                     Map(initialPosition: .rect(mapRect), interactionModes: []) {
-                        MapPolyline(coordinates: locations).stroke(RunloopStyle.accent, lineWidth: 3)
+                        MapPolyline(coordinates: locations).stroke(accent, lineWidth: 3)
+                        if let start = locations.first {
+                            Annotation("Partenza", coordinate: start, anchor: .bottom) { RouteMapPin(index: 0) }
+                        }
                     }
                     .mapStyle(.standard(emphasis: .muted))
-                    .frame(height: 86)
+                    .frame(height: 76)
                     .clipShape(.rect(cornerRadius: RunloopStyle.radius))
                 } else {
                     RunloopTrace(coordinates: route.payload.geometry.coordinates, showsGrid: true)
@@ -127,11 +171,23 @@ private struct WatchRouteDetail: View {
 
                 Button("Inizia corsa", systemImage: "figure.run", action: start)
                     .buttonStyle(RunloopButtonStyle())
-                Button(showsMap ? "Mostra traccia" : "Apri mappa", systemImage: showsMap ? "point.topleft.down.to.point.bottomright.curvepath" : "map") {
-                    showsMap.toggle()
+                let layout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+                    : AnyLayout(HStackLayout(spacing: 6))
+                layout {
+                    Button(showsMap ? "Traccia" : "Mappa") {
+                        showsMap.toggle()
+                    }
+                    .accessibilityLabel(showsMap ? "Mostra traccia" : "Apri mappa")
+                    .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
+                    .sensoryFeedback(.selection, trigger: showsMap)
+                    NavigationLink {
+                        WatchRoutePlanner(inbox: inbox, source: route.payload)
+                    } label: {
+                        Text("Variante").accessibilityLabel("Crea variante del percorso")
+                    }
+                    .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
                 }
-                .buttonStyle(RunloopButtonStyle(kind: .secondary))
-                .sensoryFeedback(.selection, trigger: showsMap)
                 if route.payload.provider == "graphhopper" {
                     Text("© OpenStreetMap contributors").font(.caption2).foregroundStyle(RunloopStyle.muted)
                 }
@@ -148,8 +204,37 @@ private struct WatchRouteDetail: View {
     }
 }
 
-func watchDistance(_ meters: Double) -> String {
-    Measurement(value: meters / 1000, unit: UnitLength.kilometers)
-        .formatted(.measurement(width: .abbreviated, usage: .asProvided,
-                                numberFormatStyle: .number.precision(.fractionLength(0...2))))
+private struct WatchRunHistory: View {
+    let inbox: WatchRouteInbox
+    @State private var local: [RunBrief] = []
+
+    private var entries: [RunBrief] {
+        let phoneIDs = Set(inbox.recent.map(\.id))
+        return (inbox.recent + local.filter { !phoneIDs.contains($0.id) }).sorted { $0.startedAt > $1.startedAt }
+    }
+
+    var body: some View {
+        List {
+            if entries.isEmpty { Text("Nessun allenamento") }
+            ForEach(entries) { entry in
+                NavigationLink {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(routeDistanceText(entry.distance)).font(RunloopType.metric)
+                        Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
+                        LabeledContent("Tempo attivo", value: Duration.seconds(entry.duration).formatted(.time(pattern: .hourMinuteSecond)))
+                        LabeledContent("Passo medio", value: runPaceText(duration: entry.duration, distance: entry.distance))
+                        Text(entry.source.displayName).foregroundStyle(RunloopStyle.muted)
+                    }.font(.footnote).padding(.horizontal, 6).navigationTitle("Corsa")
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(routeDistanceText(entry.distance)).font(RunloopType.compactMetric)
+                        Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.footnote)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Allenamenti")
+        .task(id: inbox.currentOwner) { local = inbox.workouts.localHistory(owner: inbox.currentOwner) }
+        .onChange(of: inbox.workouts.pendingCount) { local = inbox.workouts.localHistory(owner: inbox.currentOwner) }
+    }
 }

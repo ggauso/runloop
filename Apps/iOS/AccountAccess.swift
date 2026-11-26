@@ -154,8 +154,11 @@ private struct BackendConfiguration {
 }
 
 struct AccountView: View {
+    @Environment(PhoneWatchTransfer.self) private var watch
     @Environment(AccountAccess.self) private var access
     @Environment(WorkoutCloudSync.self) private var workoutCloud
+    @Environment(\.runloopAccent) private var accent
+    @AppStorage(RunloopAccent.storageKey) private var accentChoice = RunloopAccent.defaultChoice
     @State private var email = ""
     @State private var password = ""
     @State private var creatingAccount = false
@@ -170,10 +173,10 @@ struct AccountView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         Image(systemName: "person.crop.circle.fill")
-                            .font(.largeTitle).foregroundStyle(RunloopStyle.accent)
+                            .font(.largeTitle).foregroundStyle(accent)
                             .accessibilityHidden(true)
                         Text(session.user.email ?? "Account Runloop")
-                            .font(.headline.weight(.heavy))
+                            .font(RunloopType.sectionTitle)
                             .textSelection(.enabled)
                     }
                         .padding(.vertical, 10)
@@ -184,15 +187,6 @@ struct AccountView: View {
                     }
                     Button("Esci", role: .destructive) { Task { await access.signOut() } }
                         .accessibilityIdentifier("account.signOut")
-                }
-                .listRowBackground(RunloopStyle.panel)
-                Section {
-                    Toggle("Sincronizza frequenza cardiaca media", isOn: Binding(
-                        get: { workoutCloud.sharesHeartRate },
-                        set: { workoutCloud.setSharesHeartRate($0) }
-                    ))
-                } footer: {
-                    Text("Se attivo, Runloop include la frequenza cardiaca media nelle prossime corse sincronizzate. I singoli campioni restano in Salute.")
                 }
                 .listRowBackground(RunloopStyle.panel)
             } else if access.client != nil {
@@ -225,11 +219,41 @@ struct AccountView: View {
                                        description: Text("Puoi comunque consultare i tuoi allenamenti locali."))
             }
 
+            Section("Preferenze") {
+                NavigationLink("Zone cardiache") { RunZoneEditor(runs: watch.runs) }
+                Picker("Colore fluo", selection: $accentChoice) {
+                    ForEach(RunloopAccent.allCases, id: \.self) { choice in
+                        Label {
+                            Text(choice.title)
+                        } icon: {
+                            Circle().fill(choice.color).frame(width: 14, height: 14)
+                        }
+                        .tag(choice)
+                        .accessibilityIdentifier("account.accent.\(choice.rawValue)")
+                    }
+                }
+                .pickerStyle(.inline)
+                .accessibilityIdentifier("account.accent")
+            }
+            .listRowBackground(RunloopStyle.panel)
+
+            if !access.isRestoring, access.session != nil {
+                Section {
+                    Toggle("Sincronizza frequenza cardiaca media", isOn: Binding(
+                        get: { workoutCloud.sharesHeartRate },
+                        set: { workoutCloud.setSharesHeartRate($0) }
+                    ))
+                } footer: {
+                    Text("Se attivo, Runloop include la frequenza cardiaca media nelle prossime corse sincronizzate. I singoli campioni restano in Salute.")
+                }
+                .listRowBackground(RunloopStyle.panel)
+            }
+
             if access.isWorking {
                 ProgressView("Operazione in corso…")
             } else if let message = access.message {
                 Text(message)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(RunloopStyle.muted)
                     .accessibilityIdentifier("account.status")
             }
         }
@@ -237,6 +261,14 @@ struct AccountView: View {
         .runloopCanvas()
         .disabled(access.isWorking)
         .navigationTitle(creatingAccount && access.session == nil ? "Registrazione" : "Account")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(creatingAccount && access.session == nil ? "Registrazione" : "Account")
+                    .font(RunloopType.sectionTitle)
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
     }
 
     private func submit() {

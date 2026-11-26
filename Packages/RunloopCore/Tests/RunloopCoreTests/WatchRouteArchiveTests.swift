@@ -28,7 +28,32 @@ import Testing
     #expect(routes.count == 1)
     #expect(routes.first?.revision == 2)
     #expect(routes.first?.payload.name == "Anello")
+    #expect(routes.first?.payload.mode == nil)
+    #expect(routes.first?.payload.waypoints == nil)
     #expect(try reopened.routes(for: UUID()).isEmpty)
+}
+
+@Test func watchRoutePlanningPreservesTheDraftAndSelectedGeometry() throws {
+    let owner = UUID()
+    let id = UUID()
+    let start = RouteCoordinate(latitude: 45.0609793, longitude: 7.6585835)
+    let stop = RouteCoordinate(latitude: 45.0654, longitude: 7.6613)
+    let preview = RoutePreview(coordinates: [start, stop, start], distanceMeters: 1200, provider: "graphhopper")
+    let draft = RouteDraft(mode: .waypointLoop, waypoints: [start, stop], targetDistanceMeters: 5000)
+    let request = WatchRouteRequest(ownerID: owner, draft: draft, action: .save(id: id, name: "Einaudi", preview: preview))
+
+    let decoded = try WatchRouteMessage.decode(WatchRouteRequest.self, from: WatchRouteMessage.encode(request))
+    #expect(decoded.ownerID == owner)
+    #expect(decoded.draft.isValid)
+    #expect(decoded.draft.waypoints == [start, stop])
+    guard case .save(let savedID, let name, let result) = decoded.action else {
+        Issue.record("Expected the selected route to be saved")
+        return
+    }
+    #expect(savedID == id)
+    #expect(name == "Einaudi")
+    #expect(result.geometry == preview.geometry)
+    #expect(result.distanceMeters == preview.distanceMeters)
 }
 
 @Test func malformedTransfersLeaveTheArchiveUnchanged() throws {

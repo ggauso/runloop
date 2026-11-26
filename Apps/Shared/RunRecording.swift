@@ -5,16 +5,30 @@ import RunloopCore
 
 @MainActor
 @Observable
-final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
+final class RunRecording: NSObject, CLLocationManagerDelegate {
     static var directory: URL {
         URL.applicationSupportDirectory.appending(path: "Runloop/Workouts", directoryHint: .isDirectory)
     }
 
     private let manager = CLLocationManager()
     private var journal: URL?
+    private var recordsGPS = true
+    #if os(watchOS)
+    private var permissionRequest: CheckedContinuation<CLAuthorizationStatus, Never>?
+
+    func authorizationForStart() async -> CLAuthorizationStatus {
+        guard manager.authorizationStatus == .notDetermined else { return manager.authorizationStatus }
+        return await withCheckedContinuation { continuation in
+            permissionRequest = continuation
+            manager.requestWhenInUseAuthorization()
+        }
+    }
+    #endif
     private var isRecording = false
     private var activeInterval: (start: Date, elapsed: Double)?
     private var lastLocation: CLLocation?
+    // The live map shows the latest continuous stretch. The journal keeps the entire run.
+    private(set) var trail: [RouteCoordinate] = []
     private(set) var distance = 0.0
     private(set) var pointCount = 0
     private(set) var warning: String?
@@ -22,24 +36,36 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
+        #if os(iOS)
+        manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = true
+        manager.pausesLocationUpdatesAutomatically = false
+        #endif
         manager.activityType = .fitness
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = 4
     }
 
-    func prepare(id: UUID) throws {
-        let directory = Self.directory.appending(path: id.uuidString, directoryHint: .isDirectory)
+    func prepare(id: UUID, recordsGPS: Bool) throws {
+        #if os(iOS)
+        let journals = URL.applicationSupportDirectory.appending(path: "Runloop/ActiveRuns", directoryHint: .isDirectory)
+        #else
+        let journals = Self.directory
+        #endif
+        let directory = journals.appending(path: id.uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appending(path: "points.jsonl")
         try Data().write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        self.recordsGPS = recordsGPS
         journal = file
+        trail = []
         distance = 0
         pointCount = 0
-        warning = nil
+        warning = recordsGPS ? nil : "Corsa senza traccia GPS."
     }
 
     func resume(at start: Date, elapsed: Double) {
-        guard journal != nil else { return }
+        guard recordsGPS, journal != nil else { return }
         activeInterval = (start, elapsed)
         isRecording = true
         updateAuthorization()
@@ -56,6 +82,7 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
         pause()
         journal = nil
         warning = nil
+        trail = []
         distance = 0
         pointCount = 0
     }
@@ -68,11 +95,24 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
     }
 
     func save(_ workout: RecordedWorkout) throws {
+        #if os(iOS)
+        try PhoneWorkoutArchive(root: Self.directory).store(workout)
+        if let journal { try? FileManager.default.removeItem(at: journal.deletingLastPathComponent()) }
+        #else
         let directory = Self.directory.appending(path: workout.id.uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(workout).write(to: directory.appending(path: "workout.json"),
                                                   options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         if let journal { try? FileManager.default.removeItem(at: journal) }
+        #endif
+    }
+
+    func discard() throws {
+        pause()
+        if let journal, FileManager.default.fileExists(atPath: journal.deletingLastPathComponent().path) {
+            try FileManager.default.removeItem(at: journal.deletingLastPathComponent())
+        }
+        clear()
     }
 
     func discardEmptyJournal() {
@@ -88,8 +128,11 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
             manager.startUpdatingLocation()
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
-        case .denied, .restricted:
-            warning = "Posizione non autorizzata. La corsa continua senza traccia GPS."
+        case .denied:
+            warning = "GPS disattivato. Abilita la posizione per Runloop in Impostazioni."
+            manager.stopUpdatingLocation()
+        case .restricted:
+            warning = "GPS bloccato dalle restrizioni del dispositivo."
             manager.stopUpdatingLocation()
         @unknown default:
             manager.stopUpdatingLocation()
@@ -102,6 +145,8 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
         var nextCount = pointCount
         var nextDistance = distance
         var previous = lastLocation
+        var additions: [RouteCoordinate] = []
+        var startsStretch = previous == nil
         let encoder = JSONEncoder()
 
         do {
@@ -113,6 +158,7 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
                     let delta = location.distance(from: previous)
                     let time = location.timestamp.timeIntervalSince(previous.timestamp)
                     guard time > 0 else { continue }
+                    if time > 20 { startsStretch = true; additions.removeAll() }
                     if time <= 20 {
                         guard delta >= 3, delta / time <= 14 else { continue }
                         nextDistance += delta
@@ -126,6 +172,7 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
                 data.append(10)
                 nextCount += 1
                 previous = location
+                additions.append(coordinate)
             }
             guard !data.isEmpty else { return }
             let handle = try FileHandle(forWritingTo: journal)
@@ -136,6 +183,9 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
             pointCount = nextCount
             distance = nextDistance
             lastLocation = previous
+            if startsStretch { trail = [] }
+            trail.append(contentsOf: additions)
+            if trail.count > 200 { trail.removeFirst(trail.count - 200) }
         } catch {
             pause()
             warning = "Non è stato possibile salvare nuovi punti GPS."
@@ -143,7 +193,16 @@ final class WatchRunRecording: NSObject, CLLocationManagerDelegate {
     }
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        Task { @MainActor in updateAuthorization() }
+        Task { @MainActor in
+            #if os(watchOS)
+            let status = self.manager.authorizationStatus
+            if status != .notDetermined, let request = permissionRequest {
+                permissionRequest = nil
+                request.resume(returning: status)
+            }
+            #endif
+            updateAuthorization()
+        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {

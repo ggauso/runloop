@@ -12,10 +12,21 @@ final class WatchWorkoutOutbox {
     private(set) var needsRetry = false
 
     private var pending: [URL] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: WatchRunRecording.directory, includingPropertiesForKeys: nil)) ?? []
+        let files = (try? FileManager.default.contentsOfDirectory(at: RunRecording.directory, includingPropertiesForKeys: nil)) ?? []
         return files.map { $0.appending(path: "workout.json") }.filter { workout in
             FileManager.default.fileExists(atPath: workout.path)
                 && !FileManager.default.fileExists(atPath: workout.deletingLastPathComponent().appending(path: "received.json").path)
+        }
+    }
+
+    func localHistory(owner: UUID?) -> [RunBrief] {
+        let directories = (try? FileManager.default.contentsOfDirectory(at: RunRecording.directory, includingPropertiesForKeys: nil)) ?? []
+        return directories.compactMap { folder in
+            guard let data = try? Data(contentsOf: folder.appending(path: "workout.json")),
+                  let workout = try? JSONDecoder().decode(RecordedWorkout.self, from: data) else { return nil }
+            let pendingGuest = workout.ownerID == nil && !FileManager.default.fileExists(atPath: folder.appending(path: "received.json").path)
+            guard (workout.ownerID != nil && workout.ownerID == owner) || pendingGuest else { return nil }
+            return RunBrief(workout)
         }
     }
 
@@ -72,7 +83,7 @@ final class WatchWorkoutOutbox {
 
     func confirm(_ receipt: WorkoutReceipt) {
         guard !received.contains(receipt) else { return }
-        let directory = WatchRunRecording.directory.appending(path: receipt.workoutID.uuidString)
+        let directory = RunRecording.directory.appending(path: receipt.workoutID.uuidString)
         let file = directory.appending(path: "workout.json")
         do {
             let workout = try JSONDecoder().decode(RecordedWorkout.self, from: Data(contentsOf: file))
@@ -93,7 +104,7 @@ final class WatchWorkoutOutbox {
     }
 
     func delete(_ receipt: WorkoutReceipt, currentOwner: UUID?) throws {
-        let directory = WatchRunRecording.directory.appending(path: receipt.workoutID.uuidString)
+        let directory = RunRecording.directory.appending(path: receipt.workoutID.uuidString)
         let file = directory.appending(path: "workout.json")
         guard FileManager.default.fileExists(atPath: file.path) else { return }
         let workout = try JSONDecoder().decode(RecordedWorkout.self, from: Data(contentsOf: file))

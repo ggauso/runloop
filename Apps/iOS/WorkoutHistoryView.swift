@@ -12,7 +12,6 @@ struct WorkoutHistoryView: View {
     @State private var cloudFailed = false
     @State private var hasMore = false
     @State private var isLoading = false
-    @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 44.0
 
     private var entries: [WorkoutHistoryEntry] {
         let local = sync.visible(watch.workouts).map(WorkoutHistoryEntry.init)
@@ -26,10 +25,16 @@ struct WorkoutHistoryView: View {
     var body: some View {
         List {
             Text("Allenamenti")
-                .font(.system(size: titleSize, weight: .black)).tracking(-1.8)
+                .font(RunloopType.screenTitle)
                 .accessibilityAddTraits(.isHeader)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+            Button("Corsa libera", systemImage: "figure.run") {
+                watch.runs.start(route: nil, ownerID: access.session?.user.id)
+            }
+            .buttonStyle(RunloopButtonStyle())
+            .listRowBackground(Color.clear)
+            .accessibilityIdentifier("run.free")
             if entries.isEmpty {
                 ContentUnavailableView(watch.workoutReadFailed ? "Allenamenti non disponibili" : "Nessun allenamento",
                                        systemImage: "figure.run")
@@ -43,32 +48,31 @@ struct WorkoutHistoryView: View {
                 } label: {
                     if entry.id == entries.first?.id {
                         VStack(alignment: .leading, spacing: 10) {
-                            Label("ULTIMA CORSA", systemImage: "figure.run")
-                                .font(.caption.weight(.heavy)).tracking(1.5).foregroundStyle(RunloopStyle.muted)
+                            Text("Ultima corsa")
+                                .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
                             Text(routeDistanceText(entry.distanceMeters))
-                                .font(.system(.largeTitle, weight: .black)).monospacedDigit()
-                                .foregroundStyle(RunloopStyle.accent)
+                                .font(RunloopType.metric)
                             Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.subheadline).foregroundStyle(RunloopStyle.muted)
                         }
                         .padding(.vertical, 10)
                     } else {
                         HStack(spacing: 12) {
-                            Image(systemName: "figure.run").font(.subheadline.weight(.semibold))
-                                .frame(width: 27).foregroundStyle(RunloopStyle.muted)
                             Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.subheadline.weight(.semibold))
                             Spacer(minLength: 4)
-                            Text(routeDistanceText(entry.distanceMeters)).font(.subheadline.weight(.bold)).monospacedDigit()
+                            Text(routeDistanceText(entry.distanceMeters))
+                                .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
                         }
                         .padding(.vertical, 6)
                     }
                 }
-                .listRowBackground(RunloopStyle.panel)
+                .listRowBackground(entry.id == entries.first?.id ? RunloopStyle.panel : Color.clear)
+                .listRowSeparatorTint(RunloopStyle.border)
             }
             if cloudFailed {
                 Section {
-                    Text("Cloud non disponibile. Puoi consultare le corse salvate qui.").foregroundStyle(.secondary)
+                    Text("Cloud non disponibile. Puoi consultare le corse salvate qui.").foregroundStyle(RunloopStyle.muted)
                     Button("Riprova") { Task { await loadCloud() } }
                 }
                 .listRowBackground(RunloopStyle.panel)
@@ -111,6 +115,7 @@ struct WorkoutHistoryView: View {
 }
 
 private struct WorkoutDetailView: View {
+    @Environment(\.runloopAccent) private var accent
     @Environment(AccountAccess.self) private var access
     @Environment(PhoneWatchTransfer.self) private var watch
     @Environment(WorkoutCloudSync.self) private var sync
@@ -156,9 +161,9 @@ private struct WorkoutDetailView: View {
                                 }
                                 if coordinates.count > 1 {
                                     MapPolyline(coordinates: coordinates.map(\.location)).stroke(.black.opacity(0.9), lineWidth: 8)
-                                    MapPolyline(coordinates: coordinates.map(\.location)).stroke(RunloopStyle.accent, lineWidth: 4)
+                                    MapPolyline(coordinates: coordinates.map(\.location)).stroke(accent, lineWidth: 4)
                                 } else if let coordinate = coordinates.first {
-                                    Marker("Punto registrato", coordinate: coordinate.location).tint(RunloopStyle.accent)
+                                    Marker("Punto registrato", coordinate: coordinate.location).tint(accent)
                                 }
                             }
                             .mapStyle(.standard(emphasis: .muted))
@@ -166,7 +171,7 @@ private struct WorkoutDetailView: View {
                             .clipShape(.rect(cornerRadius: 12))
                             .id(mapCoordinates)
                             .accessibilityLabel("Mappa dell’allenamento")
-                            if !coordinates.isEmpty { Label("Traccia registrata", systemImage: "minus").foregroundStyle(RunloopStyle.accent) }
+                            if !coordinates.isEmpty { Label("Traccia registrata", systemImage: "minus").foregroundStyle(accent) }
                             if plan != nil {
                                 Label("Percorso pianificato", systemImage: "ellipsis").foregroundStyle(RunloopStyle.muted)
                                 Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
@@ -175,10 +180,10 @@ private struct WorkoutDetailView: View {
                         } else if isLoading {
                             ProgressView("Caricamento traccia…")
                         } else if loadFailed {
-                            Text("Traccia non disponibile. Riprova con una connessione.").foregroundStyle(.secondary)
+                            Text("Traccia non disponibile. Riprova con una connessione.").foregroundStyle(RunloopStyle.muted)
                             Button("Riprova") { Task { await loadTrace() } }
                         } else {
-                            Text("Nessuna traccia GPS registrata.").foregroundStyle(.secondary)
+                            Text("Nessuna traccia GPS registrata.").foregroundStyle(RunloopStyle.muted)
                         }
                         if !points.isEmpty {
                             GPXShareButton(name: "Corsa Runloop \(entry.startedAt.formatted(.iso8601.year().month().day()))", points: points)
@@ -242,8 +247,8 @@ private struct WorkoutDetailView: View {
                 .font(.subheadline).foregroundStyle(RunloopStyle.muted)
             VStack(alignment: .leading, spacing: 2) {
                 Text(routeDistanceText(entry.distanceMeters))
-                    .font(.system(.largeTitle, weight: .black)).monospacedDigit()
-                    .foregroundStyle(RunloopStyle.accent)
+                    .font(RunloopType.metric)
+                    .foregroundStyle(accent)
                 Text("Distanza").font(.footnote).foregroundStyle(RunloopStyle.muted)
             }
             .accessibilityElement(children: .combine)
@@ -266,7 +271,7 @@ private struct WorkoutDetailView: View {
 
     private func metric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(value).font(.headline.weight(.heavy)).monospacedDigit()
+            Text(value).font(RunloopType.compactMetric)
             Text(title).font(.caption).foregroundStyle(RunloopStyle.muted)
         }
         .accessibilityElement(children: .combine)

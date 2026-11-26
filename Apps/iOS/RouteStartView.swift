@@ -2,14 +2,17 @@ import CoreLocation
 import MapKit
 import RunloopCore
 import SwiftUI
+import UIKit
 
 struct RouteStartView: View {
-    private static let loopCandidateCount = 4
+    @Environment(\.runloopAccent) private var accent
 
     @Environment(AccountAccess.self) private var access
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .footnote) private var controlFontSize = 13.0
+    @Namespace private var variantSelection
     private let existing: SavedRoute?
     private let onSave: (SavedRoute) -> Void
     @State private var selection = RouteStartSelection()
@@ -18,9 +21,9 @@ struct RouteStartView: View {
     @State private var previews: [RoutePreview] = []
     @State private var chosenPreview = 0
     @State private var previewMode: RouteMode?
-    @State private var seenLoops: Set<Int> = []
-    @State private var usedSeeds: Set<Int> = []
+    @State private var loopSearch = LoopSearch()
     @State private var revealStartedAt: Date?
+    @State private var revealsAlternatives = false
     @State private var routingMessage: String?
     @State private var routeTask: Task<Void, Never>?
     @State private var isCalculating = false
@@ -41,7 +44,7 @@ struct RouteStartView: View {
             _previews = State(initialValue: [existing.preview])
             _previewMode = State(initialValue: existing.mode)
             if existing.mode != .manual {
-                _seenLoops = State(initialValue: [existing.preview.directionIndependentHash])
+                _loopSearch = State(initialValue: LoopSearch(existing: existing.preview))
             }
             _name = State(initialValue: existing.name)
         }
@@ -71,12 +74,12 @@ struct RouteStartView: View {
                     MapPolyline(coordinates: preview.coordinates.map(\.location))
                         .stroke(.black.opacity(isRevealing ? 0 : 0.85), lineWidth: 8)
                     MapPolyline(coordinates: preview.coordinates.map(\.location))
-                        .stroke(RunloopStyle.accent.opacity(isRevealing ? 0 : 1), lineWidth: 4)
+                        .stroke(accent.opacity(isRevealing ? 0 : 1), lineWidth: 4)
                 }
                 ForEach(Array(visiblePoints.enumerated()), id: \.offset) { index, point in
-                    Marker(index == 0 ? "Partenza" : "Tappa \(index)",
-                           systemImage: index == 0 ? "flag.fill" : "circle.fill", coordinate: point.location)
-                        .tint(index == 0 ? RunloopStyle.accent : RunloopStyle.muted)
+                    Annotation(index == 0 ? "Partenza" : "Tappa \(index)", coordinate: point.location, anchor: .bottom) {
+                        RouteMapPin(index: index)
+                    }
                 }
             }
             .mapStyle(.standard(emphasis: .muted))
@@ -88,10 +91,11 @@ struct RouteStartView: View {
             .onMapCameraChange { context in
                 selection.center = context.camera.centerCoordinate
             }
+            .modifier(RoutePlacementFeedback(points: selection.points, proxy: proxy))
             .mapControls { MapCompass() }
             .overlay {
                 if let started = revealStartedAt, isRevealing, let preview {
-                    RouteReveal(coordinates: preview.coordinates, alternatives: revealAlternatives,
+                    RouteReveal(coordinates: preview.coordinates, alternatives: revealsAlternatives ? revealAlternatives : [],
                                 startedAt: started, proxy: proxy)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
@@ -103,13 +107,21 @@ struct RouteStartView: View {
         }
         .navigationTitle(existing == nil ? "Nuovo percorso" : "Modifica percorso")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(existing == nil ? "Nuovo percorso" : "Modifica percorso")
+                    .font(RunloopType.sectionTitle)
+                    .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
         .onChange(of: selection.points) { invalidatePreview() }
         .onChange(of: access.session?.user.id) { invalidatePreview() }
-        .onChange(of: mode) { invalidatePreview() }
         .onChange(of: targetMeters) { if mode == .roundTrip { invalidatePreview() } }
         .task(id: revealStartedAt) {
             guard let started = revealStartedAt else { return }
-            try? await Task.sleep(for: .seconds(RouteReveal.duration(alternativeCount: revealAlternatives.count)))
+            let branchCount = revealsAlternatives ? revealAlternatives.count : 0
+            try? await Task.sleep(for: .seconds(RouteReveal.duration(alternativeCount: branchCount)))
             if !Task.isCancelled, revealStartedAt == started { revealStartedAt = nil }
         }
         .onDisappear {
@@ -119,8 +131,8 @@ struct RouteStartView: View {
             revealStartedAt = nil
         }
         .sensoryFeedback(.selection, trigger: mode)
-        .sensoryFeedback(.selection, trigger: visiblePoints.count)
-        .sensoryFeedback(.selection, trigger: chosenPreview)
+        .sensoryFeedback(.selection, trigger: selection.points) { _, current in !current.isEmpty }
+        .sensoryFeedback(.selection, trigger: preview?.id) { _, current in current != nil }
         .sheet(isPresented: $showsWaypoints) { waypointList }
         .alert("Salva percorso", isPresented: $showsSave) {
             TextField("Nome del percorso", text: $name)
@@ -130,30 +142,40 @@ struct RouteStartView: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 3) {
             if isSaving {
                 ProgressView("Salvataggio…")
             } else if let saveMessage {
-                Text(saveMessage).font(.subheadline).foregroundStyle(.secondary)
+                Text(saveMessage).font(.subheadline).foregroundStyle(RunloopStyle.danger)
             }
             HStack(spacing: 4) {
-                modeButton("Manuale", value: .manual, icon: "point.topleft.down.to.point.bottomright.curvepath")
-                modeButton("Ad anello", value: .roundTrip, icon: "arrow.trianglehead.clockwise")
+                modeButton("Manuale", value: .manual)
+                modeButton("Ad anello", value: .roundTrip)
+            }
+            .background {
+                GeometryReader { geometry in
+                    let segmentWidth = max(0, (geometry.size.width - 4) / 2)
+                    RoundedRectangle(cornerRadius: RunloopStyle.controlRadius)
+                        .fill(RunloopStyle.raised)
+                        .frame(width: segmentWidth, height: 28)
+                        .frame(maxHeight: .infinity)
+                        .offset(x: mode == .manual ? 0 : segmentWidth + 4)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
             .padding(.horizontal, 3)
             .background {
-                RoundedRectangle(cornerRadius: 9)
+                RoundedRectangle(cornerRadius: RunloopStyle.radius)
                     .fill(RunloopStyle.panel)
-                    .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(RunloopStyle.border) }
+                    .overlay { RoundedRectangle(cornerRadius: RunloopStyle.radius).strokeBorder(RunloopStyle.border) }
                     .frame(height: 34)
                     .allowsHitTesting(false)
             }
             .accessibilityIdentifier("route.mode")
 
             HStack {
-                Text(selection.points.isEmpty ? "Scegli la partenza" : "Partenza selezionata")
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("route.startStatus")
+                routeSummary
                 Spacer(minLength: 8)
                 if !selection.points.isEmpty {
                     if mode == .manual {
@@ -166,98 +188,176 @@ struct RouteStartView: View {
                             }
                             .labelStyle(.iconOnly)
                             .font(.footnote.weight(.semibold))
-                            .padding(.horizontal, 5)
+                            .frame(minWidth: 44, minHeight: 44)
                             .accessibilityIdentifier("route.editPoints")
                         }
                         Button("Annulla ultimo punto", systemImage: "arrow.uturn.backward") { selection.undo() }
                             .labelStyle(.iconOnly)
                             .font(.footnote.weight(.semibold))
-                            .padding(.horizontal, 5)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .buttonStyle(RunloopPressStyle())
                             .accessibilityIdentifier("route.undoPoint")
                     }
-                    Button("Centra sulla partenza", systemImage: "scope") { selection.recenter() }
+                    Button("Centra sulla partenza", systemImage: "scope") { selection.recenter(animated: !reduceMotion) }
                         .labelStyle(.iconOnly)
                         .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 5)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .buttonStyle(RunloopPressStyle())
                         .accessibilityIdentifier("route.recenter")
                 }
             }
+            .frame(minHeight: 44)
 
-            if selection.isLocating {
-                ProgressView("Ricerca della posizione…")
-            } else if let message = selection.locationMessage {
+            if let message = selection.locationMessage {
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(RunloopStyle.muted)
                     .accessibilityIdentifier("route.locationStatus")
-            } else if selection.points.isEmpty {
-                Text("Tocca la mappa o usa il centro.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                if selection.showsLocationSettings, let settings = URL(string: UIApplication.openSettingsURLString) {
+                    Link("Apri impostazioni", destination: settings)
+                        .font(.footnote.weight(.semibold))
+                        .accessibilityIdentifier("route.locationSettings")
+                }
             }
 
             if let routingMessage {
                 Text(routingMessage)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(RunloopStyle.muted)
                     .accessibilityIdentifier("route.routingStatus")
-            } else if let preview {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(routeDistanceText(preview.distanceMeters))
-                        .font(.title3.weight(.bold)).monospacedDigit()
-                        .contentTransition(.numericText())
-                        .accessibilityIdentifier("route.distance")
-                    Spacer(minLength: 8)
-                    Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
-                        .font(.caption2).foregroundStyle(RunloopStyle.muted)
-                }
-            } else if mode == .manual && selection.points.count == 1 {
-                Text("Aggiungi una tappa toccando la mappa.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
 
-            if mode == .roundTrip {
+            ZStack(alignment: .leading) {
                 Stepper(value: $targetMeters, in: 500...50000, step: 500) {
-                    Text("Obiettivo: \(routeDistanceText(Double(targetMeters)))")
+                    HStack(spacing: 8) {
+                        Text("Obiettivo").font(RunloopType.control).foregroundStyle(RunloopStyle.muted)
+                        Text(routeDistanceText(Double(targetMeters)))
+                            .font(RunloopType.readout)
+                            .contentTransition(reduceMotion ? .identity : .numericText())
+                            .animation(reduceMotion ? nil : RunloopMotion.status, value: targetMeters)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
                 .accessibilityIdentifier("route.targetDistance")
+                .opacity(!selection.isLocating && mode == .roundTrip ? 1 : 0)
+                .allowsHitTesting(!selection.isLocating && mode == .roundTrip)
+                .accessibilityHidden(selection.isLocating || mode != .roundTrip)
 
+                Text(manualHint)
+                    .font(.footnote)
+                    .foregroundStyle(RunloopStyle.muted)
+                    .opacity(!selection.isLocating && mode == .manual ? 1 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(selection.isLocating || mode != .manual)
+
+                if selection.isLocating {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Text("Ricerca della posizione…").font(.footnote)
+                    }
+                    .foregroundStyle(RunloopStyle.muted)
+                    .accessibilityElement(children: .combine)
+                }
             }
 
             if previews.count > 1 {
-                Picker("Alternativa", selection: Binding(get: { chosenPreview }, set: { index in
-                    guard previews.indices.contains(index), index != chosenPreview else { return }
-                    chosenPreview = index
-                    present(previews[index])
-                })) {
-                    ForEach(Array(previews.enumerated()), id: \.offset) { index, option in
-                        Text("\(index + 1) · \(routeDistanceText(option.distanceMeters))").tag(index)
-                    }
+                alternativePicker
+                    .transition(.opacity)
+            }
+
+            HStack(spacing: 0) { selectionButtons }
+                .background {
+                    RoundedRectangle(cornerRadius: RunloopStyle.controlRadius)
+                        .fill(RunloopStyle.panel)
+                        .frame(height: 30)
+                        .allowsHitTesting(false)
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("route.alternatives")
-            }
 
-            HStack(spacing: 8) { selectionButtons }
-
-            if canCalculate {
-                routeActions
-            }
+            routeActions
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RunloopStyle.canvas)
         .overlay(alignment: .top) { Divider().overlay(RunloopStyle.border) }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: chosenPreview)
+    }
+
+    @ViewBuilder
+    private var routeSummary: some View {
+        if let preview {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(routeDistanceText(preview.distanceMeters))
+                    .font(RunloopType.compactMetric)
+                    .foregroundStyle(RunloopStyle.text)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .animation(reduceMotion ? nil : RunloopMotion.status, value: preview.distanceMeters)
+                    .accessibilityIdentifier("route.distance")
+                Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
+                    .font(.caption2).foregroundStyle(RunloopStyle.muted)
+            }
+            .transition(.opacity)
+        } else {
+            Text(selection.points.isEmpty ? "Scegli la partenza" : "Partenza selezionata")
+                .font(RunloopType.control)
+                .accessibilityIdentifier("route.startStatus")
+                .transition(.opacity)
+        }
+    }
+
+    private var manualHint: String {
+        switch selection.points.count {
+        case 0: "Tocca la mappa o scegli qui sotto."
+        case 1: "Tocca la mappa per aggiungere una tappa."
+        default: "Punti sul percorso: \(selection.points.count)"
+        }
+    }
+
+    @ViewBuilder
+    private var alternativePicker: some View {
+        if previews.count > 4 || dynamicTypeSize.isAccessibilitySize {
+            ScrollView(.horizontal) {
+                alternativeButtons(fillsWidth: false)
+            }
+            .id(previews.first?.id)
+            .accessibilityLabel("Alternative")
+            .accessibilityIdentifier("route.alternatives")
+        } else {
+            alternativeButtons(fillsWidth: true)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Alternative")
+                .accessibilityIdentifier("route.alternatives")
+        }
+    }
+
+    private func alternativeButtons(fillsWidth: Bool) -> some View {
+        HStack(spacing: 6) {
+            ForEach(Array(previews.enumerated()), id: \.element.id) { index, option in
+                let distance = routeDistanceText(option.distanceMeters)
+                let selected = index == chosenPreview
+                Button {
+                    choosePreview(index)
+                } label: {
+                    RouteVariantLabel(index: index, distance: distance, selected: selected,
+                                      fillsWidth: fillsWidth, namespace: variantSelection)
+                }
+                .buttonStyle(RunloopPressStyle())
+                .accessibilityLabel("Alternativa \(index + 1) di \(previews.count), \(distance)")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("route.alternative.\(index + 1)")
+            }
+        }
+    }
+
+    private func choosePreview(_ index: Int) {
+        guard previews.indices.contains(index), index != chosenPreview else { return }
+        withAnimation(reduceMotion ? nil : RunloopMotion.status) { chosenPreview = index }
+        present(previews[index], explore: false)
     }
 
     private var routeActions: some View {
         HStack(spacing: 8) {
-            if isCalculating {
-                ProgressView("Calcolo percorso…").font(.footnote)
-            } else if access.session == nil || access.client == nil {
+            if canCalculate && (access.session == nil || access.client == nil) {
                 NavigationLink("Accedi per calcolare") { AccountView() }
             } else {
                 let loopMode: RouteMode = mode == .manual ? .waypointLoop : .roundTrip
@@ -265,37 +365,51 @@ struct RouteStartView: View {
                     Button("Calcola tratta", systemImage: "arrow.forward") { calculate(.manual) }
                         .buttonStyle(RouteEditorActionStyle(fontSize: controlFontSize))
                         .accessibilityIdentifier("route.calculate")
+                        .disabled(!canCalculate || isCalculating)
                 }
-                Button(previewMode == loopMode ? "Altri anelli" : mode == .manual ? "Genera anello" : "Genera anelli",
-                       systemImage: "arrow.trianglehead.clockwise") { calculate(loopMode) }
-                    .buttonStyle(RouteEditorActionStyle(primary: preview == nil, fontSize: controlFontSize))
-                    .accessibilityIdentifier("route.generateLoop")
+                if isCalculating {
+                    ProgressView("Calcolo percorso…").font(RunloopType.control)
+                } else {
+                    Button(previewMode == loopMode ? "Altri anelli" : mode == .manual ? "Genera anello" : "Genera anelli",
+                           systemImage: "arrow.trianglehead.clockwise") { calculate(loopMode) }
+                        .buttonStyle(RouteEditorActionStyle(primary: preview == nil, fontSize: controlFontSize))
+                        .accessibilityIdentifier("route.generateLoop")
+                        .disabled(!canCalculate)
+                }
                 if preview != nil {
                     Spacer(minLength: 0)
                     Button("Salva percorso", systemImage: "checkmark") { showsSave = true }
                         .buttonStyle(RouteEditorActionStyle(primary: true, fontSize: controlFontSize))
                         .accessibilityIdentifier("route.save")
+                        .disabled(isCalculating)
                 }
             }
         }
+        .frame(minHeight: 44)
         .disabled(isSaving)
     }
 
-    private func modeButton(_ title: String, value: RouteMode, icon: String) -> some View {
+    private func modeButton(_ title: String, value: RouteMode) -> some View {
         Button {
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) { mode = value }
+            guard mode != value else { return }
+            withAnimation(reduceMotion ? nil : RunloopMotion.editorLayout) {
+                mode = value
+                invalidatePreview()
+            }
         } label: {
-            Label(title, systemImage: icon)
+            HStack(spacing: 6) {
+                RouteModeGlyph(mode: value)
+                Text(title)
+            }
                 .font(.system(size: min(controlFontSize, 16), weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, minHeight: 28)
-                .foregroundStyle(mode == value ? RunloopStyle.canvas : RunloopStyle.muted)
-                .background(mode == value ? RunloopStyle.accent : .clear, in: .rect(cornerRadius: 7))
+                .foregroundStyle(mode == value ? accent : RunloopStyle.muted)
                 .frame(minHeight: 44)
                 .contentShape(.rect)
         }
-        .buttonStyle(RunloopPressStyle())
+        .buttonStyle(.plain)
         .accessibilityAddTraits(mode == value ? .isSelected : [])
     }
 
@@ -306,6 +420,9 @@ struct RouteStartView: View {
         .buttonStyle(RouteEditorActionStyle(fillsWidth: true, fontSize: controlFontSize))
         .accessibilityLabel("Usa il centro della mappa")
         .accessibilityIdentifier("route.useCenter")
+
+        Rectangle().fill(RunloopStyle.border).frame(width: 1, height: 16)
+            .accessibilityHidden(true)
 
         Button("La mia posizione", systemImage: "location") {
             selection.useCurrentLocation()
@@ -342,7 +459,8 @@ struct RouteStartView: View {
         let requestedMode = mode
         let requestedDistance = targetMeters
         let requestedUser = access.session?.user.id
-        let seeds = calculation == .manual ? [] : reserveSeeds(for: calculation)
+        let seeds = calculation == .manual ? [] : loopSearch.reserveSeeds()
+        let previousLoop = previewMode == calculation ? preview : nil
         let service = RoutingService(client: client)
         routeTask = Task {
             do {
@@ -358,14 +476,23 @@ struct RouteStartView: View {
                 guard !Task.isCancelled, access.session?.user.id == requestedUser,
                       mode == requestedMode, selection.points == requestedPoints,
                       mode == .manual || targetMeters == requestedDistance else { return }
-                let fresh = calculation == .manual ? results : results.filter { seenLoops.insert($0.directionIndependentHash).inserted }
-                if let first = fresh.first {
-                    chosenPreview = 0
-                    previews = fresh
-                    previewMode = calculation
-                    present(first)
+                let fresh: [RoutePreview]
+                if calculation == .manual {
+                    fresh = results
                 } else {
-                    routingMessage = "Non ho trovato altre varianti. Riprova o sposta un punto."
+                    fresh = loopSearch.rank(results, previous: previousLoop,
+                                      reference: calculation == .waypointLoop ? requestedPoints.last ?? start : start,
+                                      targetDistance: calculation == .roundTrip ? Double(requestedDistance) : nil)
+                }
+                withAnimation(reduceMotion ? nil : RunloopMotion.editorLayout) {
+                    if let first = fresh.first {
+                        chosenPreview = 0
+                        previews = fresh
+                        previewMode = calculation
+                        present(first, explore: true)
+                    } else {
+                        routingMessage = "Non ho trovato altre varianti. Riprova o sposta un punto."
+                    }
                 }
             } catch {
                 guard !Task.isCancelled, access.session?.user.id == requestedUser,
@@ -378,23 +505,10 @@ struct RouteStartView: View {
         }
     }
 
-    private func reserveSeeds(for calculation: RouteMode) -> [Int] {
-        if usedSeeds.isEmpty {
-            let seeds = calculation == .roundTrip ? [0, 7, 11, 17] : Array(0..<Self.loopCandidateCount)
-            usedSeeds.formUnion(seeds)
-            return seeds
-        }
-        var seeds: [Int] = []
-        while seeds.count < Self.loopCandidateCount {
-            let seed = Int.random(in: 0...Int(Int32.max))
-            if usedSeeds.insert(seed).inserted { seeds.append(seed) }
-        }
-        return seeds
-    }
-
-    private func present(_ preview: RoutePreview) {
+    private func present(_ preview: RoutePreview, explore: Bool) {
         let alternatives = reduceMotion ? [] : revealAlternatives
-        selection.frame(preview.coordinates + alternatives.flatMap { $0 })
+        selection.frame(preview.coordinates + alternatives.flatMap { $0 }, animated: !reduceMotion)
+        revealsAlternatives = explore
         revealStartedAt = reduceMotion ? nil : .now
     }
 
@@ -404,8 +518,7 @@ struct RouteStartView: View {
         isCalculating = false
         previews = []
         previewMode = nil
-        seenLoops.removeAll()
-        usedSeeds.removeAll()
+        loopSearch = LoopSearch()
         revealStartedAt = nil
         chosenPreview = 0
         routingMessage = nil
@@ -439,14 +552,14 @@ struct RouteStartView: View {
 @MainActor
 @Observable
 private final class RouteStartSelection: NSObject, @preconcurrency CLLocationManagerDelegate {
-    private static let previewCenter = CLLocationCoordinate2D(latitude: 43.7358, longitude: 7.4236)
     private let locationManager = CLLocationManager()
     private var requestedFix = false
 
-    var camera = MapCameraPosition.region(region(around: previewCenter))
-    var center = previewCenter
+    var camera = MapCameraPosition.region(region(around: routePlanningStart))
+    var center = routePlanningStart
     private(set) var points: [RouteCoordinate] = []
     private(set) var isLocating = false
+    private(set) var showsLocationSettings = false
     private(set) var locationMessage: String?
 
     init(points: [RouteCoordinate] = [], geometry: [RouteCoordinate] = []) {
@@ -465,8 +578,9 @@ private final class RouteStartSelection: NSObject, @preconcurrency CLLocationMan
             setStart(point)
             return
         }
-        guard points.count < RoutingService.maxWaypoints else {
-            locationMessage = "Puoi inserire fino a \(RoutingService.maxWaypoints) punti. Rimuovine uno per continuare."
+        guard points.count < RouteDraft.maximumWaypoints else {
+            showsLocationSettings = false
+            locationMessage = "Puoi inserire fino a \(RouteDraft.maximumWaypoints) punti. Rimuovine uno per continuare."
             return
         }
         guard points.last != point else { return }
@@ -483,12 +597,13 @@ private final class RouteStartSelection: NSObject, @preconcurrency CLLocationMan
         if requestedFix { locationManager.stopUpdatingLocation() }
         isLocating = false
         requestedFix = false
+        showsLocationSettings = false
         locationMessage = nil
     }
 
-    func recenter() {
+    func recenter(animated: Bool) {
         guard let start = points.first else { return }
-        withAnimation { camera = .region(Self.region(around: start.location)) }
+        withAnimation(animated ? RunloopMotion.status : nil) { camera = .region(Self.region(around: start.location)) }
     }
 
     func undo() {
@@ -507,13 +622,14 @@ private final class RouteStartSelection: NSObject, @preconcurrency CLLocationMan
         points.move(fromOffsets: indices, toOffset: index + 1)
     }
 
-    func frame(_ coordinates: [RouteCoordinate]) {
-        withAnimation { camera = .rect(routeMapRect(coordinates)) }
+    func frame(_ coordinates: [RouteCoordinate], animated: Bool) {
+        withAnimation(animated ? RunloopMotion.status : nil) { camera = .rect(routeMapRect(coordinates)) }
     }
 
     func useCurrentLocation() {
         guard !isLocating else { return }
         isLocating = true
+        showsLocationSettings = false
         locationMessage = nil
         if locationManager.authorizationStatus == .notDetermined {
             locationManager.requestWhenInUseAuthorization()
@@ -523,6 +639,10 @@ private final class RouteStartSelection: NSObject, @preconcurrency CLLocationMan
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if showsLocationSettings && manager.authorizationStatus != .denied {
+            showsLocationSettings = false
+            locationMessage = nil
+        }
         guard isLocating else { return }
         updateAuthorization(manager.authorizationStatus)
     }
@@ -537,7 +657,7 @@ private final class RouteStartSelection: NSObject, @preconcurrency CLLocationMan
         requestedFix = false
         finishSelection()
         setStart(RouteCoordinate(fix.coordinate))
-        recenter()
+        recenter(animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -553,8 +673,11 @@ private final class RouteStartSelection: NSObject, @preconcurrency CLLocationMan
             locationManager.requestLocation()
         case .notDetermined:
             break
-        default:
+        case .denied:
             finishWithError("Accesso alla posizione disattivato. Puoi scegliere la partenza sulla mappa.")
+            showsLocationSettings = true
+        default:
+            finishWithError("Posizione non disponibile. Scegli la partenza sulla mappa.")
         }
     }
 
@@ -570,6 +693,7 @@ private final class RouteStartSelection: NSObject, @preconcurrency CLLocationMan
 }
 
 private struct RouteEditorActionStyle: ButtonStyle {
+    @Environment(\.runloopAccent) private var accent
     var primary = false
     var fillsWidth = false
     let fontSize: CGFloat
@@ -577,7 +701,7 @@ private struct RouteEditorActionStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 8)
+        let shape = RoundedRectangle(cornerRadius: RunloopStyle.controlRadius)
         return configuration.label
             .font(.system(size: min(fontSize, 16), weight: .semibold))
             .lineLimit(1)
@@ -585,95 +709,11 @@ private struct RouteEditorActionStyle: ButtonStyle {
             .padding(.horizontal, 9)
             .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 30)
             .foregroundStyle(primary ? RunloopStyle.canvas : RunloopStyle.text)
-            .background(primary ? RunloopStyle.accent : RunloopStyle.panel, in: shape)
-            .overlay { if !primary { shape.strokeBorder(RunloopStyle.border) } }
+            .background(primary ? accent : fillsWidth ? Color.clear : RunloopStyle.panel, in: shape)
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(.rect)
             .opacity(enabled ? (configuration.isPressed ? 0.76 : 1) : 0.48)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
-    }
-}
-
-private struct RouteReveal: View {
-    private static let routeDrawDuration = 0.82
-    private static let routeDelay = 0.83
-    private static let branchDrawDuration = 0.67
-    private static let branchLeadIn = 0.14
-    private static let branchStagger = 0.17
-    private static let branchFadeStart = 1.10
-    private static let branchFadeDuration = 1.02
-    private static let branchColor = Color(red: 0.38, green: 0.91, blue: 0.91)
-
-    private let coordinates: [RouteCoordinate]
-    private let alternatives: [[RouteCoordinate]]
-    let startedAt: Date
-    let proxy: MapProxy
-
-    init(coordinates: [RouteCoordinate], alternatives: [[RouteCoordinate]], startedAt: Date, proxy: MapProxy) {
-        self.coordinates = Self.sample(coordinates, limit: alternatives.isEmpty ? 900 : 600)
-        self.alternatives = alternatives.map { Self.sample($0, limit: 190) }
-        self.startedAt = startedAt
-        self.proxy = proxy
-    }
-
-    static func duration(alternativeCount: Int) -> TimeInterval {
-        guard alternativeCount > 0 else { return routeDrawDuration + 0.03 }
-        return branchStart(at: alternativeCount - 1) + branchFadeStart + branchFadeDuration + 0.03
-    }
-
-    private static func branchStart(at index: Int) -> TimeInterval {
-        branchLeadIn + Double(index) * branchStagger
-    }
-
-    private static func sample(_ coordinates: [RouteCoordinate], limit: Int) -> [RouteCoordinate] {
-        let step = max(1, (coordinates.count + limit - 1) / limit)
-        var samples = stride(from: 0, to: coordinates.count, by: step).map { coordinates[$0] }
-        if let last = coordinates.last, samples.last != last { samples.append(last) }
-        return samples
-    }
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
-            Canvas { context, _ in
-                let elapsed = timeline.date.timeIntervalSince(startedAt)
-                for (index, alternative) in alternatives.enumerated() {
-                    let branchTime = elapsed - Self.branchStart(at: index)
-                    let fade = min(1, max(0, (branchTime - Self.branchFadeStart) / Self.branchFadeDuration))
-                    let opacity = 1 - fade * fade * (3 - 2 * fade)
-                    let progress = branchTime / Self.branchDrawDuration
-                    guard opacity > 0, let branch = trace(alternative, progress: progress) else { continue }
-                    context.stroke(branch, with: .color(.black.opacity(0.78 * opacity)),
-                                   style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
-                    context.stroke(branch, with: .color(Self.branchColor.opacity(0.94 * opacity)),
-                                   style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
-                    drawHead(of: branch, progress: progress, radius: 2.5, in: context)
-                }
-
-                let delay = alternatives.isEmpty ? 0 : Self.routeDelay
-                let progress = (elapsed - delay) / Self.routeDrawDuration
-                guard let stroke = trace(coordinates, progress: progress) else { return }
-                context.stroke(stroke, with: .color(.black.opacity(0.92)),
-                               style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
-                context.stroke(stroke, with: .color(RunloopStyle.accent),
-                               style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-                drawHead(of: stroke, progress: progress, radius: 3, in: context)
-            }
-            .clipped()
-        }
-    }
-
-    private func drawHead(of stroke: Path, progress: Double, radius: CGFloat, in context: GraphicsContext) {
-        guard progress < 1, let head = stroke.currentPoint else { return }
-        let marker = Path(ellipseIn: CGRect(x: head.x - radius, y: head.y - radius, width: radius * 2, height: radius * 2))
-        context.fill(marker, with: .color(RunloopStyle.text.opacity(min(1, (1 - progress) * 12))))
-    }
-
-    private func trace(_ coordinates: [RouteCoordinate], progress: Double) -> Path? {
-        guard progress > 0 else { return nil }
-        let points = coordinates.compactMap { proxy.convert($0.location, to: .local) }
-        guard points.count > 1 else { return nil }
-        let path = Path { $0.addLines(points) }
-        let t = min(1, progress)
-        return t == 1 ? path : path.trimmedPath(from: 0, to: t * (2 - t))
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.975 : 1)
+            .animation(reduceMotion ? nil : RunloopMotion.press, value: configuration.isPressed)
     }
 }
