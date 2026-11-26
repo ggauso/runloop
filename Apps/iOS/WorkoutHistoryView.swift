@@ -7,6 +7,7 @@ struct WorkoutHistoryView: View {
     @Environment(AccountAccess.self) private var access
     @Environment(PhoneWatchTransfer.self) private var watch
     @Environment(WorkoutCloudSync.self) private var sync
+    @Environment(\.runloopAccent) private var accent
     @State private var cloudRows: [CloudWorkout] = []
     @State private var cloudOwner: UUID?
     @State private var cloudFailed = false
@@ -24,11 +25,29 @@ struct WorkoutHistoryView: View {
 
     var body: some View {
         List {
-            Text("Allenamenti")
-                .font(RunloopType.screenTitle)
-                .accessibilityAddTraits(.isHeader)
+            RunloopHeading(context: "Runloop  /  Storico", title: "Allenamenti")
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
+            if let latest = entries.first {
+                NavigationLink {
+                    detail(latest)
+                } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("ULTIMA CORSA").font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+                        Text(routeDistanceText(latest.distanceMeters))
+                            .font(RunloopType.display(size: 84, relativeTo: .largeTitle)).foregroundStyle(accent)
+                            .lineLimit(1).minimumScaleFactor(0.55)
+                        Text(latest.startedAt.formatted(date: .abbreviated, time: .shortened))
+                        Text("Tempo attivo " + Duration.seconds(latest.duration).formatted(.time(pattern: .minuteSecond)))
+                            .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+                        if let local = latest.local, !local.points.isEmpty {
+                            RunLiveMap(planned: [], trail: local.points.map(\.coordinate))
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }.padding(.vertical, 8)
+                }
+                .accessibilityIdentifier("history.workout." + latest.id.uuidString)
                 .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+            }
             Button("Corsa libera", systemImage: "figure.run") {
                 watch.runs.start(route: nil, ownerID: access.session?.user.id)
             }
@@ -40,35 +59,20 @@ struct WorkoutHistoryView: View {
                                        systemImage: "figure.run")
                     .listRowBackground(Color.clear)
             }
-            ForEach(entries) { entry in
+            ForEach(entries.dropFirst()) { entry in
                 NavigationLink {
-                    WorkoutDetailView(entry: entry) {
-                        cloudRows.removeAll { $0.id == entry.id }
-                    }
+                    detail(entry)
                 } label: {
-                    if entry.id == entries.first?.id {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Ultima corsa")
-                                .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
-                            Text(routeDistanceText(entry.distanceMeters))
-                                .font(RunloopType.metric)
-                            Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.subheadline).foregroundStyle(RunloopStyle.muted)
-                        }
-                        .padding(.vertical, 10)
-                    } else {
-                        HStack(spacing: 12) {
-                            Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.subheadline.weight(.semibold))
-                            Spacer(minLength: 4)
-                            Text(routeDistanceText(entry.distanceMeters))
-                                .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
-                        }
-                        .padding(.vertical, 6)
-                    }
+                    HStack(spacing: 12) {
+                        Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.subheadline.weight(.semibold))
+                        Spacer(minLength: 4)
+                        Text(routeDistanceText(entry.distanceMeters))
+                            .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+                    }.padding(.vertical, 6)
                 }
-                .listRowBackground(entry.id == entries.first?.id ? RunloopStyle.panel : Color.clear)
-                .listRowSeparatorTint(RunloopStyle.border)
+                .accessibilityIdentifier("history.workout." + entry.id.uuidString)
+                .listRowBackground(Color.clear).listRowSeparatorTint(RunloopStyle.border)
             }
             if cloudFailed {
                 Section {
@@ -87,6 +91,10 @@ struct WorkoutHistoryView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task(id: access.session?.user.id) { await loadCloud() }
         .refreshable { await loadCloud() }
+    }
+
+    private func detail(_ entry: WorkoutHistoryEntry) -> some View {
+        WorkoutDetailView(entry: entry) { cloudRows.removeAll { $0.id == entry.id } }
     }
 
     private func loadCloud(addPage: Bool = false) async {
@@ -263,6 +271,7 @@ private struct WorkoutDetailView: View {
 
     @ViewBuilder private var workoutMetrics: some View {
         metric("Durata attiva", Duration.seconds(entry.duration).formatted(.time(pattern: .hourMinuteSecond)))
+            .accessibilityIdentifier("history.duration")
         metric("Passo medio", entry.pace.map(paceText) ?? "—")
         if let heartRate = entry.heartRate {
             metric("FC media", "\(heartRate.formatted(.number.precision(.fractionLength(0)))) bpm")

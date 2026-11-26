@@ -25,10 +25,10 @@ struct WatchRoutePlanner: View {
     @State private var previewMode: RouteMode?
     @State private var originalPreviewID: UUID?
     @State private var revealedAt: Date?
-    @State private var branchCount = 0
     @State private var search = LoopSearch()
     @State private var operation: Task<Void, Never>?
     @State private var message: String?
+    @State private var interrupted: (mode: RouteMode, date: Date)?
     @State private var showsSave = false
     @State private var name = ""
 
@@ -55,6 +55,15 @@ struct WatchRoutePlanner: View {
     private var visibleWaypoints: [RouteCoordinate] { mode == .roundTrip ? Array(waypoints.prefix(1)) : waypoints }
     private var busy: Bool { operation != nil }
     private var canCalculate: Bool { draft(loopMode).isValid && inbox.currentOwner != nil }
+
+    private var phoneReconnected: Bool {
+        guard let interrupted, inbox.runs.connected, let lastReply = inbox.runs.lastPeerReply else { return false }
+        return lastReply > interrupted.date
+    }
+
+    private var statusMessage: String? {
+        phoneReconnected ? "iPhone ricollegato. Puoi riprovare il calcolo." : message ?? location.message
+    }
 
     var body: some View {
         ScrollViewReader { scroll in
@@ -87,9 +96,9 @@ struct WatchRoutePlanner: View {
                     }
                 }
 
-                if let status = message ?? location.message {
-                    Text(status).font(.footnote).foregroundStyle(RunloopStyle.danger)
-                        .accessibilityIdentifier("watch.route.message")
+                if let status = statusMessage {
+                    Text(status).font(.footnote).foregroundStyle(phoneReconnected ? RunloopStyle.text : RunloopStyle.danger)
+                        .accessibilityIdentifier(phoneReconnected ? "watch.route.reconnected" : "watch.route.message")
                 } else if inbox.currentOwner == nil {
                     Text("Accedi a Runloop su iPhone per creare percorsi.")
                         .font(.footnote).foregroundStyle(RunloopStyle.muted)
@@ -100,7 +109,10 @@ struct WatchRoutePlanner: View {
             .padding(.horizontal, 6)
         }
         .runloopCanvas()
-        .navigationTitle(source == nil ? "Nuovo percorso" : "Crea variante")
+        .navigationTitle(source == nil ? "Percorso" : "Variante")
+        .onChange(of: statusMessage) { _, status in
+            if let status { AccessibilityNotification.Announcement(status).post() }
+        }
         .onChange(of: target) { resetResults() }
         .onChange(of: location.fix) { _, fix in
             guard let fix, !busy else { return }
@@ -111,7 +123,7 @@ struct WatchRoutePlanner: View {
         .onDisappear { operation?.cancel(); operation = nil; location.cancel() }
         .task(id: revealedAt) {
             guard let revealedAt else { return }
-            try? await Task.sleep(for: .seconds(RouteReveal.duration(alternativeCount: branchCount)))
+            try? await Task.sleep(for: .seconds(RouteReveal.duration))
             if !Task.isCancelled, self.revealedAt == revealedAt { self.revealedAt = nil }
         }
         .sensoryFeedback(.selection, trigger: waypoints)
@@ -125,7 +137,8 @@ struct WatchRoutePlanner: View {
     }
 
     private var modePicker: some View {
-        HStack(spacing: 0) {
+        let layout = dynamicTypeSize >= .xxLarge ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+        return layout {
             modeButton("Manuale", value: .manual)
             modeButton("Ad anello", value: .roundTrip)
         }
@@ -141,8 +154,14 @@ struct WatchRoutePlanner: View {
                 resetResults()
             }
         } label: {
-            HStack(spacing: 3) {
-                if !dynamicTypeSize.isAccessibilitySize { RouteModeGlyph(mode: value) }
+            ViewThatFits(in: .horizontal) {
+                if !dynamicTypeSize.isAccessibilitySize {
+                    HStack(spacing: 3) {
+                        RouteModeGlyph(mode: value)
+                        Text(title)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                }
                 Text(title)
             }
                 .font(RunloopType.control)
@@ -158,7 +177,7 @@ struct WatchRoutePlanner: View {
                 }
                 .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RunloopPressStyle())
         .accessibilityAddTraits(mode == value ? .isSelected : [])
         .accessibilityIdentifier(value == .manual ? "watch.route.manual" : "watch.route.loop")
     }
@@ -188,8 +207,7 @@ struct WatchRoutePlanner: View {
             })
             .overlay {
                 if !reduceMotion, let revealedAt, let preview {
-                    let branches = branchCount == 0 ? [] : previews.indices.filter { $0 != chosen }.map { previews[$0].coordinates }
-                    RouteReveal(coordinates: preview.coordinates, alternatives: branches, startedAt: revealedAt, proxy: proxy)
+                    RouteReveal(coordinates: preview.coordinates, startedAt: revealedAt, proxy: proxy)
                         .accessibilityHidden(true).allowsHitTesting(false)
                 } else if preview == nil {
                     Image(systemName: "plus")
@@ -204,27 +222,29 @@ struct WatchRoutePlanner: View {
     }
 
     private var pointControls: some View {
-        HStack(spacing: 4) {
+        let layout = dynamicTypeSize >= .xxLarge ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 4))
+        return layout {
             let addingStop = mode == .manual && !waypoints.isEmpty
             Button(addingStop ? "Tappa" : "Centro mappa",
                    systemImage: "plus") { select(center) }
                 .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
                 .accessibilityLabel(addingStop ? "Aggiungi tappa al centro della mappa" : "Usa il centro della mappa")
                 .accessibilityIdentifier("watch.route.center")
-            Button("La mia posizione", systemImage: "location") {
+            Button {
+                interrupted = nil
                 message = nil
                 location.request()
-            }
-                .labelStyle(.iconOnly)
+            } label: { Image(systemName: "location") }
+                .accessibilityLabel("La mia posizione")
                 .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
                 .disabled(location.isLocating)
                 .accessibilityIdentifier("watch.route.location")
             if mode == .manual && !waypoints.isEmpty {
-                Button("Rimuovi ultimo punto", systemImage: "arrow.uturn.backward") {
+                Button {
                     waypoints.removeLast()
                     resetResults()
-                }
-                .labelStyle(.iconOnly)
+                } label: { Image(systemName: "arrow.uturn.backward") }
+                .accessibilityLabel("Rimuovi ultimo punto")
                 .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
                 .accessibilityIdentifier("watch.route.undo")
             }
@@ -233,23 +253,33 @@ struct WatchRoutePlanner: View {
     }
 
     private var distanceTarget: some View {
-        HStack(spacing: 4) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Obiettivo").font(.caption2).foregroundStyle(RunloopStyle.muted)
-                Text(routeDistanceText(Double(target))).font(RunloopType.readout)
-                    .contentTransition(reduceMotion ? .identity : .numericText())
-                    .animation(reduceMotion ? nil : RunloopMotion.status, value: target)
-            }
-            .accessibilityElement(children: .combine)
-            Spacer(minLength: 0)
-            Button("Riduci obiettivo", systemImage: "minus") { target -= 1000 }
-                .labelStyle(.iconOnly)
+        let value = VStack(alignment: .leading, spacing: 2) {
+            Text("Obiettivo").font(.caption2).foregroundStyle(RunloopStyle.muted)
+            Text(routeDistanceText(Double(target))).font(RunloopType.readout)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .animation(reduceMotion ? nil : RunloopMotion.status, value: target)
+        }
+        .accessibilityElement(children: .combine)
+        let controls = HStack(spacing: 4) {
+            Button { target -= 1000 } label: { Image(systemName: "minus") }
+                .accessibilityLabel("Riduci obiettivo")
                 .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
                 .disabled(target <= 1000)
-            Button("Aumenta obiettivo", systemImage: "plus") { target += 1000 }
-                .labelStyle(.iconOnly)
+            Button { target += 1000 } label: { Image(systemName: "plus") }
+                .accessibilityLabel("Aumenta obiettivo")
                 .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
                 .disabled(target >= 50000)
+        }
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
+                value.fixedSize()
+                Spacer(minLength: 0)
+                controls
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                value
+                controls
+            }
         }
         .disabled(busy)
     }
@@ -260,8 +290,8 @@ struct WatchRoutePlanner: View {
                 ForEach(Array(previews.enumerated()), id: \.element.id) { index, option in
                     Button {
                         guard index != chosen else { return }
-                        withAnimation(reduceMotion ? nil : RunloopMotion.status) { chosen = index }
-                        reveal(branches: false)
+                        withAnimation(reduceMotion ? nil : RunloopMotion.selection) { chosen = index }
+                        reveal()
                     } label: {
                         RouteVariantLabel(index: index, distance: routeDistanceText(option.distanceMeters),
                                           selected: index == chosen, fillsWidth: false, namespace: editorSelection)
@@ -282,12 +312,12 @@ struct WatchRoutePlanner: View {
             ProgressView("Attendi…")
         } else {
             if mode == .manual && previewMode != .manual {
-                Button("Calcola tratta", systemImage: "arrow.right") { calculate(.manual) }
+                Button(interrupted?.mode == .manual ? "Riprova la tratta" : "Calcola tratta", systemImage: "arrow.right") { calculate(.manual) }
                     .buttonStyle(RunloopButtonStyle(kind: .secondary))
                     .disabled(!canCalculate)
                     .accessibilityIdentifier("watch.route.calculate")
             }
-            Button(previewMode == loopMode ? "Altri anelli" : "Genera anelli", systemImage: "arrow.clockwise") {
+            Button(interrupted?.mode == loopMode ? "Riprova gli anelli" : previewMode == loopMode ? "Altri anelli" : "Genera anelli", systemImage: "arrow.clockwise") {
                 calculate(loopMode)
             }
             .buttonStyle(RunloopButtonStyle(kind: preview == nil ? .primary : .secondary))
@@ -331,6 +361,7 @@ struct WatchRoutePlanner: View {
     }
 
     private func resetResults() {
+        interrupted = nil
         previews = []
         previewMode = nil
         chosen = 0
@@ -344,6 +375,7 @@ struct WatchRoutePlanner: View {
         let draft = draft(calculation)
         let seeds = calculation == .manual ? [] : search.reserveSeeds()
         let previous = previewMode == calculation ? preview : nil
+        interrupted = nil
         message = nil
         operation = Task {
             defer { operation = nil }
@@ -360,23 +392,26 @@ struct WatchRoutePlanner: View {
                 chosen = 0
                 previews = results
                 previewMode = calculation
-                reveal(branches: true)
+                reveal()
             } catch {
-                if !Task.isCancelled { message = error.localizedDescription }
+                guard !Task.isCancelled else { return }
+                if (error as? WatchRouteError)?.disconnected == true {
+                    interrupted = (calculation, .now)
+                }
+                message = error.localizedDescription
             }
         }
     }
 
-    private func reveal(branches: Bool) {
+    private func reveal() {
         guard let preview else { return }
-        let alternatives = branches && !reduceMotion ? previews.indices.filter { $0 != chosen }.map { previews[$0] } : []
-        branchCount = alternatives.count
-        camera = .rect(routeMapRect(preview.coordinates + alternatives.flatMap(\.coordinates)))
+        camera = .rect(routeMapRect(preview.coordinates))
         revealedAt = reduceMotion ? nil : .now
     }
 
     private func save() {
         guard !busy, let preview, let previewMode else { return }
+        interrupted = nil
         let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (1...80).contains(title.count) else {
             message = "Inserisci un nome da 1 a 80 caratteri."

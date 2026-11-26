@@ -7,6 +7,7 @@ struct RunloopApp: App {
     @State private var watchTransfer = PhoneWatchTransfer()
     @State private var workoutCloud = WorkoutCloudSync()
     @State private var tab = RunloopTab.routes
+    @State private var routeEditorVisible = false
     @State private var keyboardVisible = false
     @AppStorage(RunloopAccent.storageKey) private var accentChoice = RunloopAccent.defaultChoice
     @Environment(\.scenePhase) private var scenePhase
@@ -16,22 +17,22 @@ struct RunloopApp: App {
             VStack(spacing: 0) {
                 TabView(selection: $tab) {
                     Tab("Percorsi", systemImage: RunloopTab.routes.icon, value: .routes) {
-                        NavigationStack { RouteLibraryView() }.toolbarVisibility(.hidden, for: .tabBar)
+                        RouteLibraryView(editorVisible: $routeEditorVisible).toolbarVisibility(.hidden, for: .tabBar)
                     }
                     Tab("Allenamenti", systemImage: RunloopTab.workouts.icon, value: .workouts) {
                         NavigationStack { WorkoutHistoryView() }.toolbarVisibility(.hidden, for: .tabBar)
                     }
                     Tab("Account", systemImage: RunloopTab.account.icon, value: .account) {
-                        NavigationStack { AccountView() }.toolbarVisibility(.hidden, for: .tabBar)
+                        NavigationStack { AccountView(openRoutes: { tab = .routes }) }.toolbarVisibility(.hidden, for: .tabBar)
                     }
                 }
-                if !keyboardVisible { RunloopTabBar(selection: $tab) }
+                if !keyboardVisible && !(tab == .routes && routeEditorVisible) { RunloopTabBar(selection: $tab) }
             }
             .accessibilityHidden(watchTransfer.runs.isPresented)
             .allowsHitTesting(!watchTransfer.runs.isPresented)
             .overlay {
                 if watchTransfer.runs.isPresented {
-                    RunSessionScreen(runs: watchTransfer.runs)
+                    RunSessionScreen(runs: watchTransfer.runs, onSavedClose: { tab = .workouts })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(RunloopStyle.canvas.ignoresSafeArea())
                 }
@@ -39,15 +40,18 @@ struct RunloopApp: App {
             .background(RunloopStyle.canvas.ignoresSafeArea())
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
+            .modifier(RunloopLaunch(runs: watchTransfer.runs))
             .preferredColorScheme(.dark)
-            .modifier(RequestLocationPermissionOnLaunch())
+            .modifier(RequestLocationPermissionOnLaunch(ready: watchTransfer.runs.launchPhase == .finished && !watchTransfer.runs.isPresented))
             .tint(accentChoice.color)
             .environment(\.runloopAccent, accentChoice.color)
             .environment(access)
             .environment(watchTransfer)
             .environment(workoutCloud)
             .task(id: scenePhase) {
-                if scenePhase == .active { await watchTransfer.runs.monitor() }
+                if scenePhase == .active {
+                    await watchTransfer.runs.monitor { watchTransfer.hasAccountState }
+                }
             }
             .onChange(of: watchTransfer.runs.local.phase) { _, phase in
                 if phase == .discarded { watchTransfer.runs.rememberCompletion() }
@@ -133,7 +137,7 @@ private struct RunloopTabBar: View {
                     .foregroundStyle(selection == tab ? accent : RunloopStyle.muted)
                     .overlay(alignment: .top) {
                         if selection == tab {
-                            Capsule().fill(accent).frame(width: 24, height: 2)
+                            Capsule().fill(accent).frame(width: 45, height: 3)
                                 .matchedGeometryEffect(id: "active-tab", in: indicator)
                         }
                     }
@@ -145,10 +149,10 @@ private struct RunloopTabBar: View {
         }
         .frame(maxWidth: 620)
         .padding(.horizontal, 22)
-        .padding(.top, 6)
+        .padding(.top, 1)
         .padding(.bottom, 2)
         .frame(maxWidth: .infinity)
-        .background(RunloopStyle.canvas)
+        .background(RunloopStyle.panel.ignoresSafeArea(edges: .bottom))
         .overlay(alignment: .top) { Divider().overlay(RunloopStyle.border) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Schede")

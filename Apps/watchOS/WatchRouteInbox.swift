@@ -71,21 +71,31 @@ final class WatchRouteInbox: NSObject, WCSessionDelegate {
     func planRoute(_ draft: RouteDraft, action: WatchRouteRequest.Action) async throws -> WatchRouteReply {
         guard let ownerID else { throw WatchRouteError("Accedi a Runloop su iPhone per creare percorsi.") }
         guard let session, session.activationState == .activated, session.isReachable else {
-            throw WatchRouteError("Avvicina l’iPhone e apri Runloop per riprovare.")
+            throw WatchRouteError("Avvicina l’iPhone e apri Runloop per riprovare.", disconnected: true)
         }
         let request = WatchRouteRequest(ownerID: ownerID, draft: draft, action: action)
         let selectedData = try WatchRouteMessage.encode(request)
-        let reply: WatchRouteReply = try await withCheckedThrowingContinuation { continuation in
-            session.sendMessage([WatchRouteMessage.requestKey: selectedData]) { payload in
-                guard let data = payload[WatchRouteMessage.replyKey] as? Data,
-                      let reply = try? WatchRouteMessage.decode(WatchRouteReply.self, from: data) else {
-                    continuation.resume(throwing: WatchRouteError("Risposta dell’iPhone non disponibile. Riprova."))
-                    return
-                }
-                continuation.resume(returning: reply)
-            } errorHandler: { _ in
-                continuation.resume(throwing: WatchRouteError("Collegamento con iPhone interrotto. Riprova."))
-            }
+        do {
+            try await runs.checkPhoneConnection(using: session)
+        } catch {
+            try Task.checkCancellation()
+            throw WatchRouteError("Collegamento con iPhone interrotto. Avvicina l’iPhone e riprova.", disconnected: true)
+        }
+        try Task.checkCancellation()
+        guard self.ownerID == ownerID else { throw WatchRouteError("L’account è cambiato. Riapri il percorso.") }
+        let data: Data?
+        do {
+            // Allow time for authentication and the routing provider once the phone has answered.
+            data = try await session.runloopReply(to: selectedData, key: WatchRouteMessage.requestKey,
+                                                  replyKey: WatchRouteMessage.replyKey, timeout: .seconds(40))
+        } catch let error as URLError where error.code == .timedOut {
+            throw WatchRouteError("L’iPhone non ha risposto in tempo. Riprova.")
+        } catch {
+            try Task.checkCancellation()
+            throw WatchRouteError("Collegamento con iPhone interrotto. Riprova.", disconnected: true)
+        }
+        guard let data, let reply = try? WatchRouteMessage.decode(WatchRouteReply.self, from: data) else {
+            throw WatchRouteError("Risposta dell’iPhone non disponibile. Riprova.")
         }
         guard self.ownerID == ownerID else { throw WatchRouteError("L’account è cambiato. Riapri il percorso.") }
         if case .failure(let message) = reply { throw WatchRouteError(message) }
@@ -165,7 +175,7 @@ final class WatchRouteInbox: NSObject, WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any],
                              replyHandler: @escaping @Sendable ([String: Any]) -> Void) {
         if let data = message[RunCompanion.key] as? Data {
-            Task { @MainActor in replyHandler([RunCompanion.key: runs.respond(data)]) }
+            Task { @MainActor in replyHandler([RunCompanion.key: await runs.respond(data)]) }
             return
         }
         guard let data = message[WorkoutTransfer.deletionKey] as? Data,
@@ -194,5 +204,10 @@ final class WatchRouteInbox: NSObject, WCSessionDelegate {
 struct WatchRouteError: LocalizedError {
     let errorDescription: String?
 
-    init(_ message: String) { errorDescription = message }
+    let disconnected: Bool
+
+    init(_ message: String, disconnected: Bool = false) {
+        errorDescription = message
+        self.disconnected = disconnected
+    }
 }

@@ -75,6 +75,28 @@ public enum WorkoutTransfer {
     public static let deletionReceiptKey = "runloop.workoutDeletionReceipt"
     public static let byteLimit = 16 * 1024 * 1024
 
+    // Simulator WatchConnectivity uses interactive messages instead of background file transfers.
+    private static let messageLimit = 60_000
+    private static let compressedHeader = Data([0x52, 0x4c, 0x01])
+
+    public static func interactiveMessage(_ json: Data) throws -> Data {
+        guard json.count <= byteLimit else { throw CocoaError(.fileWriteOutOfSpace) }
+        if json.count <= messageLimit { return json }
+        let compressed = try (json as NSData).compressed(using: .zlib) as Data
+        let message = compressedHeader + compressed
+        guard message.count <= messageLimit else { throw CocoaError(.fileWriteOutOfSpace) }
+        return message
+    }
+
+    public static func interactiveContents(_ message: Data) throws -> Data {
+        guard message.count <= messageLimit else { throw CocoaError(.fileReadTooLarge) }
+        guard message.starts(with: compressedHeader) else { return message }
+        let compressed = Data(message.dropFirst(compressedHeader.count))
+        let json = try (compressed as NSData).decompressed(using: .zlib) as Data
+        guard json.count <= byteLimit else { throw CocoaError(.fileReadTooLarge) }
+        return json
+    }
+
     public static func encode(_ workout: RecordedWorkout) throws -> Data {
         try JSONEncoder().encode(SyncEnvelope(entityType: "workout", entityID: workout.id, revision: 1, payload: workout))
     }

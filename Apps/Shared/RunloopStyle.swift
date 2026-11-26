@@ -61,12 +61,16 @@ enum RunloopType {
         return CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
     }()
 
-    static let screenTitle = display(size: 51, relativeTo: .largeTitle)
+    static let screenTitle = display(size: 49, relativeTo: .largeTitle)
     static let sectionTitle = display(size: 26, relativeTo: .title2)
     static let metric = display(size: 37, relativeTo: .largeTitle).monospacedDigit()
     static let compactMetric = display(size: 25, relativeTo: .title3).monospacedDigit()
     static let readout = Font.system(.caption, design: .monospaced).weight(.medium)
+    #if os(watchOS)
+    static let control = Font.caption2.weight(.semibold)
+    #else
     static let control = Font.footnote.weight(.semibold)
+    #endif
 
     static func display(size: CGFloat, relativeTo style: Font.TextStyle) -> Font {
         hasDisplayFont ? .custom(displayName, size: size, relativeTo: style) : .system(style, weight: .heavy)
@@ -75,15 +79,76 @@ enum RunloopType {
 
 enum RunloopMotion {
     static let press = Animation.easeOut(duration: 0.14)
-    static let selection = Animation.spring(response: 0.27, dampingFraction: 0.85)
+    static let selection = Animation.easeOut(duration: 0.22)
     static let status = Animation.easeOut(duration: 0.20)
-    static let editorLayout = Animation.easeInOut(duration: 0.22)
+    static let editorLayout = selection
+}
+
+struct RunloopHeading: View {
+    let context: String
+    let title: String
+    @Environment(\.runloopAccent) private var accent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(context.uppercased()).font(RunloopType.readout)
+                    .foregroundStyle(RunloopStyle.muted)
+                Spacer()
+                Canvas { graphics, size in
+                    var mark = Path()
+                    for offset in [0.0, 10.0] {
+                        mark.move(to: CGPoint(x: 3 + offset, y: 18))
+                        mark.addLine(to: CGPoint(x: 10 + offset, y: 4))
+                        mark.addLine(to: CGPoint(x: 16 + offset, y: 4))
+                        mark.addLine(to: CGPoint(x: 9 + offset, y: 18))
+                    }
+                    graphics.stroke(mark, with: .color(accent), lineWidth: 2.5)
+                }.frame(width: 29, height: 23).accessibilityHidden(true)
+            }
+            Text(title).font(RunloopType.screenTitle).accessibilityAddTraits(.isHeader)
+        }
+    }
+}
+
+private struct RunloopActionLabel: LabelStyle {
+    let compact: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        #if os(watchOS)
+        ViewThatFits(in: .horizontal) {
+            row(configuration)
+            configuration.title
+        }
+        #else
+        row(configuration)
+        #endif
+    }
+
+    private func row(_ configuration: Configuration) -> some View {
+        HStack(spacing: compact ? 4 : 10) {
+            if compact { configuration.icon }
+            #if os(watchOS)
+            configuration.title.fixedSize(horizontal: true, vertical: false)
+            #else
+            configuration.title
+            #endif
+            if !compact {
+                Spacer(minLength: 5)
+                configuration.icon
+            }
+        }
+    }
 }
 
 struct RunloopButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary, destructive }
     var kind: Kind = .primary
     var compact = false
+    var fillsAvailableWidth = false
+    #if os(watchOS)
+    @ScaledMetric(relativeTo: .caption2) private var compactSize: CGFloat = 12
+    #endif
     @Environment(\.isEnabled) private var enabled
     @Environment(\.runloopAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -91,14 +156,18 @@ struct RunloopButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: RunloopStyle.radius)
         configuration.label
+            .labelStyle(RunloopActionLabel(compact: compact))
+            #if os(watchOS)
+            .font(compact ? .system(size: compactSize, weight: .semibold) : .subheadline.weight(.semibold))
+            #else
             .font(compact ? RunloopType.control : .subheadline.weight(.semibold))
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 12)
+            #endif
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, compact ? 7 : 16)
             .padding(.vertical, 8)
-            .frame(maxWidth: compact ? nil : .infinity, minHeight: compact ? 36 : minimumHeight)
+            .frame(maxWidth: compact && !fillsAvailableWidth ? nil : .infinity, minHeight: compact ? 36 : minimumHeight, alignment: compact ? .center : .leading)
             .foregroundStyle(kind == .primary ? RunloopStyle.canvas : kind == .destructive ? RunloopStyle.danger : RunloopStyle.text)
-            .background(kind == .primary ? accent : RunloopStyle.panel, in: shape)
-            .overlay { if kind != .primary { shape.strokeBorder(RunloopStyle.border, lineWidth: 1) } }
+            .background(kind == .primary ? accent : kind == .destructive ? RunloopStyle.panel : RunloopStyle.raised, in: shape)
             .frame(minWidth: compact ? 44 : nil, minHeight: compact ? 44 : nil)
             .contentShape(.rect)
             .opacity(enabled ? (configuration.isPressed ? 0.78 : 1) : 0.48)
@@ -120,8 +189,8 @@ struct RunloopPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.74 : 1)
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.975 : 1)
             .animation(reduceMotion ? nil : RunloopMotion.press, value: configuration.isPressed)
     }
 }

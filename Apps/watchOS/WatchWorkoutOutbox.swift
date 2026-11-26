@@ -55,9 +55,9 @@ final class WatchWorkoutOutbox {
                 guard data.count <= WorkoutTransfer.byteLimit else { throw CocoaError(.fileWriteOutOfSpace) }
                 let receipt = WorkoutReceipt(workoutID: workout.id, ownerID: workout.ownerID)
                 #if targetEnvironment(simulator)
-                guard data.count <= 60_000 else { throw CocoaError(.fileWriteOutOfSpace) }
+                let message = try WorkoutTransfer.interactiveMessage(data)
                 inFlight.insert(workout.id)
-                session.sendMessageData(data) { [weak self] reply in
+                session.sendMessageData(message) { [weak self] reply in
                     let result = try? JSONDecoder().decode(WorkoutReceipt.self, from: reply)
                     Task { @MainActor in
                         self?.inFlight.remove(workout.id)

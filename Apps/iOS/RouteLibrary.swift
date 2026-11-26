@@ -92,6 +92,7 @@ struct RouteLibraryService {
 }
 
 struct RouteLibraryView: View {
+    @Binding var editorVisible: Bool
     @Environment(AccountAccess.self) private var access
     @Environment(PhoneWatchTransfer.self) private var watchTransfer
     @State private var routes: [SavedRoute] = []
@@ -100,35 +101,55 @@ struct RouteLibraryView: View {
     @State private var message: String?
     @State private var revision = 0
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .center, spacing: 12) {
-                        libraryTitle.fixedSize(horizontal: true, vertical: false)
-                        Spacer(minLength: 4)
-                        newRouteLink.fixedSize(horizontal: true, vertical: false)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        libraryTitle
-                        newRouteLink
-                    }
-                }
+    private enum Destination: Hashable { case create, saved(UUID) }
+    @State private var path: [Destination] = []
+    @Environment(\.runloopAccent) private var accent
 
-                Button("Corsa libera", systemImage: "figure.run") {
-                    watchTransfer.runs.start(route: nil, ownerID: access.session?.user.id)
+    var body: some View {
+        NavigationStack(path: $path) {
+            library.navigationDestination(for: Destination.self) { destination in
+                switch destination {
+                case .create:
+                    RouteStartView(editorVisible: $editorVisible) { route in
+                        replace(route)
+                        path = [.saved(route.id)]
+                    }
+                case .saved(let id):
+                    if let route = routes.first(where: { $0.id == id }) {
+                        SavedRouteDetail(route: route, editorVisible: $editorVisible, onChange: replace, onDelete: remove)
+                    } else {
+                        ContentUnavailableView("Percorso non disponibile", systemImage: "map")
+                    }
                 }
-                .buttonStyle(RunloopButtonStyle())
-                .accessibilityIdentifier("run.free")
+            }
+        }
+    }
+
+    private var library: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                RunloopHeading(context: "Runloop  /  Libreria", title: "Percorsi")
+
+                if let owner = access.session?.user.id, owner == snapshotOwner, let latest = routes.first {
+                    routeLink(latest, featured: true)
+                }
+                VStack(spacing: 10) {
+                    newRouteLink
+                    Button("Corsa libera", systemImage: "figure.run") {
+                        watchTransfer.runs.start(route: nil, ownerID: access.session?.user.id)
+                    }
+                    .buttonStyle(RunloopButtonStyle(kind: .secondary))
+                    .accessibilityIdentifier("run.free")
+                }
 
                 if let owner = access.session?.user.id {
-                    if let latest = owner == snapshotOwner ? routes.first : nil {
-                        routeLink(latest, featured: true)
+                    if owner == snapshotOwner, !routes.isEmpty {
                         if routes.count > 1 {
+                            Text("ALTRI PERCORSI").font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
                             VStack(spacing: 0) {
                                 ForEach(routes.dropFirst()) { route in
+                                    Divider().overlay(RunloopStyle.border)
                                     routeLink(route, featured: false)
-                                    if route.id != routes.last?.id { Divider().overlay(RunloopStyle.border) }
                                 }
                             }
                         }
@@ -167,51 +188,45 @@ struct RouteLibraryView: View {
         .refreshable { await refresh() }
     }
 
-    private var libraryTitle: some View {
-        Text("Percorsi")
-            .font(RunloopType.screenTitle)
-            .accessibilityAddTraits(.isHeader)
-    }
-
     private var newRouteLink: some View {
-        NavigationLink {
-            RouteStartView(onSave: replace)
-        } label: {
+        NavigationLink(value: Destination.create) {
             Label("Nuovo percorso", systemImage: "plus")
         }
-        .buttonStyle(RunloopButtonStyle(compact: true))
+        .buttonStyle(RunloopButtonStyle())
         .accessibilityIdentifier("library.newRoute")
     }
 
     private func routeLink(_ route: SavedRoute, featured: Bool) -> some View {
-        NavigationLink {
-            SavedRouteDetail(route: route, onChange: replace, onDelete: remove)
-        } label: {
+        NavigationLink(value: Destination.saved(route.id)) {
             if featured {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Ultimo percorso")
-                        .font(RunloopType.readout)
-                        .foregroundStyle(RunloopStyle.muted)
-                    RunloopTrace(coordinates: route.geometry.coordinates, showsGrid: true, lineWidth: 3.5)
-                        .frame(height: 154)
-                        .background(RunloopStyle.panel, in: .rect(cornerRadius: RunloopStyle.radius))
+                VStack(alignment: .leading, spacing: 12) {
+                    SavedRouteMap(route: route, interactive: false)
+                        .frame(height: 240)
                         .clipShape(.rect(cornerRadius: RunloopStyle.radius))
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(route.name).font(RunloopType.sectionTitle)
-                            Text(routeSummary(distance: route.distanceMeters, mode: route.mode))
-                                .font(RunloopType.readout)
-                                .foregroundStyle(RunloopStyle.muted)
+                        .overlay(alignment: .topLeading) {
+                            Text(route.mode == .manual ? "TRATTA" : "AD ANELLO")
+                                .font(RunloopType.readout).padding(7)
+                                .foregroundStyle(accent)
+                                .background(RunloopStyle.canvas, in: .rect(cornerRadius: 5)).padding(10)
                         }
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(RunloopStyle.muted)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(route.name).font(RunloopType.display(size: 36, relativeTo: .title)).fixedSize(horizontal: true, vertical: false)
+                            Spacer(minLength: 8)
+                            Text(routeDistanceText(route.distanceMeters)).font(RunloopType.metric).foregroundStyle(accent).fixedSize()
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(route.name).font(RunloopType.sectionTitle)
+                            Text(routeDistanceText(route.distanceMeters)).font(RunloopType.metric).foregroundStyle(accent)
+                        }
                     }
-                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if let start = route.waypoints.first ?? route.geometry.coordinates.first {
+                        DepartureLabel(point: start).font(.subheadline).foregroundStyle(RunloopStyle.muted)
+                    }
                 }
-                .foregroundStyle(RunloopStyle.text)
-                .contentShape(.rect)
+                .foregroundStyle(RunloopStyle.text).contentShape(.rect)
             } else {
                 HStack(spacing: 14) {
                     RunloopTrace(coordinates: route.geometry.coordinates, color: RunloopStyle.muted, lineWidth: 2)
@@ -302,6 +317,7 @@ private struct SavedRouteDetail: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State var route: SavedRoute
+    @Binding var editorVisible: Bool
     var onChange: (SavedRoute) -> Void
     var onDelete: (UUID) -> Void
     @State private var name = ""
@@ -314,27 +330,25 @@ private struct SavedRouteDetail: View {
     var body: some View {
         Group {
             if route.ownerID == access.session?.user.id {
-                Map(initialPosition: .rect(routeMapRect(route.geometry.coordinates))) {
-                    MapPolyline(coordinates: route.geometry.coordinates.map(\.location)).stroke(.black.opacity(0.8), lineWidth: 8)
-                    MapPolyline(coordinates: route.geometry.coordinates.map(\.location)).stroke(accent, lineWidth: 4)
-                    if let start = route.geometry.coordinates.first {
-                        Annotation("Partenza", coordinate: start.location, anchor: .bottom) { RouteMapPin(index: 0) }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        RunloopHeading(context: "Percorso salvato", title: route.name)
+                        Text(route.mode == .manual ? "TRATTA" : "AD ANELLO")
+                            .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+                        SavedRouteMap(route: route, interactive: true)
+                            .frame(height: 270)
+                            .clipShape(.rect(cornerRadius: RunloopStyle.radius))
+                        details
                     }
+                    .frame(maxWidth: 620, alignment: .leading)
+                    .padding(.horizontal, 22).padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
                 }
-                .mapStyle(.standard(emphasis: .muted))
-                .id(route.revision)
-                .safeAreaInset(edge: .bottom) { details }
+                .runloopCanvas()
                 .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text(route.name)
-                            .font(.headline)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .accessibilityAddTraits(.isHeader)
-                    }
                     ToolbarItemGroup(placement: .primaryAction) {
                         NavigationLink {
-                            RouteStartView(existing: route, onSave: replace)
+                            RouteStartView(existing: route, editorVisible: $editorVisible, onSave: replace)
                         } label: {
                             Label("Modifica percorso", systemImage: "pencil")
                                 .labelStyle(.iconOnly)
@@ -353,7 +367,7 @@ private struct SavedRouteDetail: View {
                 ContentUnavailableView("Percorso non disponibile", systemImage: "map")
             }
         }
-        .navigationTitle(route.ownerID == access.session?.user.id ? route.name : "Percorso")
+        .navigationTitle("Percorso")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Rinomina percorso", isPresented: $showsRename) {
             TextField("Nome", text: $name)
@@ -370,10 +384,8 @@ private struct SavedRouteDetail: View {
         let summary = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
-        let actions = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-            : AnyLayout(HStackLayout(spacing: 10))
         return VStack(alignment: .leading, spacing: 8) {
+            Text("DISTANZA").font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
             summary {
                 Text(routeDistanceText(route.distanceMeters)).font(RunloopType.metric)
                     .foregroundStyle(RunloopStyle.text)
@@ -383,32 +395,28 @@ private struct SavedRouteDetail: View {
                         .font(.caption2).foregroundStyle(RunloopStyle.muted)
                 }
             }
+            if let start = route.waypoints.first ?? route.geometry.coordinates.first {
+                DepartureLabel(point: start).font(.subheadline).foregroundStyle(RunloopStyle.muted)
+                    .padding(.bottom, 7)
+            }
             Button("Inizia corsa", systemImage: "figure.run") {
                 watchTransfer.runs.start(route: route.watchEnvelope, ownerID: access.session?.user.id)
             }
             .buttonStyle(RunloopButtonStyle())
             .accessibilityIdentifier("run.route")
-            actions {
-                Button("Invia al Watch", systemImage: "applewatch") { watchTransfer.send(route) }
-                    .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
-                GPXShareButton(name: route.name, points: route.geometry.coordinates.map { GPXPoint(coordinate: $0) },
-                               creditsOpenStreetMap: route.provider == "graphhopper")
-                    .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
+            Button(watchStatus?.title ?? "Invia al Watch", systemImage: watchStatus == .received ? "checkmark" : "applewatch") {
+                watchTransfer.send(route)
             }
-            if let watchStatus {
-                Label(watchStatus.title, systemImage: watchStatus == .received ? "checkmark.circle.fill" : watchStatus == .failed ? "exclamationmark.circle" : "arrow.trianglehead.clockwise")
-                    .font(.footnote)
-                    .foregroundStyle(watchStatus == .received ? accent : watchStatus == .failed ? RunloopStyle.danger : RunloopStyle.muted)
-                    .contentTransition(.opacity)
-            }
+            .buttonStyle(RunloopButtonStyle(kind: .secondary))
+            GPXShareButton(name: route.name, points: route.geometry.coordinates.map { GPXPoint(coordinate: $0) },
+                           creditsOpenStreetMap: route.provider == "graphhopper")
+                .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
             if isWorking { ProgressView() }
             if let message { Text(message).font(.subheadline).foregroundStyle(RunloopStyle.danger) }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RunloopStyle.canvas)
-        .overlay(alignment: .top) { Divider().overlay(RunloopStyle.border) }
         .animation(reduceMotion ? nil : RunloopMotion.status, value: watchStatus)
         .sensoryFeedback(.success, trigger: watchStatus) { _, current in current == .received }
     }
@@ -440,5 +448,50 @@ private struct SavedRouteDetail: View {
             onDelete(route.id)
             dismiss()
         } catch { message = RouteLibraryService.message(for: error) }
+    }
+}
+
+
+private struct DepartureLabel: View {
+    let point: RouteCoordinate
+    @State private var address: String?
+    @State private var resolvedPoint: RouteCoordinate?
+
+    var body: some View {
+        let fallback = point.latitude.formatted(.number.precision(.fractionLength(4))) + "°, " +
+            point.longitude.formatted(.number.precision(.fractionLength(4))) + "°"
+        Text("Partenza · " + ((resolvedPoint == point ? address : nil) ?? fallback))
+            .task(id: point) {
+                let location = CLLocation(latitude: point.latitude, longitude: point.longitude)
+                guard let request = MKReverseGeocodingRequest(location: location) else { return }
+                let item = try? await request.mapItems.first
+                guard !Task.isCancelled else { return }
+                address = item?.address?.shortAddress
+                resolvedPoint = point
+            }
+    }
+}
+
+private struct SavedRouteMap: View {
+    let route: SavedRoute
+    let interactive: Bool
+    @Environment(\.runloopAccent) private var accent
+
+    var body: some View {
+        Map(initialPosition: .rect(routeMapRect(route.geometry.coordinates)),
+            interactionModes: interactive ? .all : []) {
+            MapPolyline(coordinates: route.geometry.coordinates.map(\.location))
+                .stroke(RunloopStyle.canvas, lineWidth: 7)
+            MapPolyline(coordinates: route.geometry.coordinates.map(\.location))
+                .stroke(accent, lineWidth: 3.5)
+            if let start = route.geometry.coordinates.first {
+                Annotation("Partenza", coordinate: start.location) {
+                    Circle().fill(accent).frame(width: 10, height: 10)
+                        .overlay { Circle().strokeBorder(RunloopStyle.canvas, lineWidth: 2) }
+                }.annotationTitles(.hidden)
+            }
+        }
+        .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
+        .id(route.revision)
     }
 }

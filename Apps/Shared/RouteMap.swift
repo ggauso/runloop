@@ -5,12 +5,13 @@ import SwiftUI
 let routePlanningStart = CLLocationCoordinate2D(latitude: 45.0609793, longitude: 7.6585835)
 
 struct RequestLocationPermissionOnLaunch: ViewModifier {
+    let ready: Bool
     @Environment(\.scenePhase) private var scenePhase
     @State private var locationManager: CLLocationManager?
 
     func body(content: Content) -> some View {
-        content.onChange(of: scenePhase, initial: true) { _, phase in
-            guard phase == .active, locationManager == nil else { return }
+        content.onChange(of: ready && scenePhase == .active, initial: true) { _, canRequest in
+            guard canRequest, locationManager == nil else { return }
             let manager = CLLocationManager()
             locationManager = manager
             if manager.authorizationStatus == .notDetermined {
@@ -137,28 +138,31 @@ struct RouteVariantLabel: View {
     let fillsWidth: Bool
     let namespace: Namespace.ID
 
+    private var minimumWidth: CGFloat {
+        #if os(iOS)
+        fillsWidth ? 44 : 104
+        #else
+        44
+        #endif
+    }
+
     var body: some View {
-        HStack(spacing: 5) {
-            Text("\(index + 1)")
-                .font(.caption2.monospacedDigit().weight(.semibold))
-                .padding(3)
-                .frame(minWidth: 17, minHeight: 17)
-                .background(Circle().fill(selected ? accent : RunloopStyle.raised))
-                .foregroundStyle(selected ? RunloopStyle.canvas : RunloopStyle.muted)
-            Text(distance).foregroundStyle(selected ? RunloopStyle.text : RunloopStyle.muted)
+        VStack(alignment: .leading, spacing: 4) {
+            Text((index + 1).formatted(.number.precision(.integerLength(2))))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(selected ? accent : RunloopStyle.muted)
+            Text(distance).font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(selected ? RunloopStyle.text : RunloopStyle.muted)
         }
-        .font(RunloopType.readout)
-        .lineLimit(1)
-        .minimumScaleFactor(0.78)
-        .padding(.horizontal, 7)
-        .frame(maxWidth: fillsWidth ? .infinity : nil)
-        .frame(minWidth: 44, minHeight: 44)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(minWidth: minimumWidth, maxWidth: fillsWidth ? .infinity : nil, minHeight: 52, alignment: .leading)
+        .background(RunloopStyle.panel, in: .rect(cornerRadius: 7))
         .overlay(alignment: .bottom) {
             if selected {
-                Capsule().fill(accent)
-                    .frame(width: 22, height: 2)
+                Capsule().fill(accent).frame(height: 3)
                     .matchedGeometryEffect(id: "variant", in: namespace)
-                    .padding(.bottom, 5)
+                    .padding(.horizontal, 6)
             }
         }
         .contentShape(.rect)
@@ -193,85 +197,54 @@ struct RouteMapPin: View {
 
 struct RouteReveal: View {
     @Environment(\.runloopAccent) private var accent
-    private static let routeDrawDuration = 0.82
-    private static let routeDelay = 0.83
-    private static let branchDrawDuration = 0.67
-    private static let branchLeadIn = 0.14
-    private static let branchStagger = 0.14
-    private static let branchFadeStart = 1.10
-    private static let branchFadeDuration = 1.02
+    // Five equal phases in the prototype. The selected geometry is complete at 800 ms.
+    static let duration: TimeInterval = 0.8
 
+    private static let phaseCount = 5
+    private static let delay: TimeInterval = 0.05
     private let coordinates: [RouteCoordinate]
-    private let alternatives: [[RouteCoordinate]]
     let startedAt: Date
     let proxy: MapProxy
 
-    init(coordinates: [RouteCoordinate], alternatives: [[RouteCoordinate]], startedAt: Date, proxy: MapProxy) {
-        self.coordinates = Self.sample(coordinates, limit: alternatives.isEmpty ? 900 : 600)
-        let branchSampleLimit = min(190, 575 / max(1, alternatives.count))
-        self.alternatives = alternatives.map { Self.sample($0, limit: branchSampleLimit) }
+    init(coordinates: [RouteCoordinate], startedAt: Date, proxy: MapProxy) {
+        // Bound projection work on a long GPX route and preserve its endpoint.
+        let step = max(1, (coordinates.count + 899) / 900)
+        var sampled = stride(from: 0, to: coordinates.count, by: step).map { coordinates[$0] }
+        if let last = coordinates.last, sampled.last != last { sampled.append(last) }
+        self.coordinates = sampled
         self.startedAt = startedAt
         self.proxy = proxy
     }
 
-    static func duration(alternativeCount: Int) -> TimeInterval {
-        guard alternativeCount > 0 else { return routeDrawDuration + 0.03 }
-        return branchStart(at: alternativeCount - 1) + branchFadeStart + branchFadeDuration + 0.03
-    }
-
-    private static func branchStart(at index: Int) -> TimeInterval {
-        branchLeadIn + Double(index) * branchStagger
-    }
-
-    private static func sample(_ coordinates: [RouteCoordinate], limit: Int) -> [RouteCoordinate] {
-        let step = max(1, (coordinates.count + limit - 1) / limit)
-        var samples = stride(from: 0, to: coordinates.count, by: step).map { coordinates[$0] }
-        if let last = coordinates.last, samples.last != last { samples.append(last) }
-        return samples
-    }
-
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 60)) { timeline in
             Canvas { context, _ in
+                let points = coordinates.compactMap { proxy.convert($0.location, to: .local) }
+                guard points.count > 1 else { return }
+                let shortPath = points.count <= Self.phaseCount ? Path { $0.addLines(points) } : nil
                 let elapsed = timeline.date.timeIntervalSince(startedAt)
-                for (index, alternative) in alternatives.enumerated() {
-                    let branchTime = elapsed - Self.branchStart(at: index)
-                    let fade = min(1, max(0, (branchTime - Self.branchFadeStart) / Self.branchFadeDuration))
-                    let opacity = 1 - fade * fade * (3 - 2 * fade)
-                    let progress = branchTime / Self.branchDrawDuration
-                    guard opacity > 0, let branch = trace(alternative, progress: progress) else { continue }
-                    context.stroke(branch, with: .color(.black.opacity(0.78 * opacity)),
-                                   style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
-                    context.stroke(branch, with: .color(RunloopStyle.branch.opacity(0.94 * opacity)),
-                                   style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
-                    drawHead(of: branch, progress: progress, radius: 2.5, in: context)
+                let phaseLength = Self.duration / Double(Self.phaseCount)
+                for index in 0..<Self.phaseCount {
+                    let time = elapsed - Double(index) * phaseLength - Self.delay
+                    guard time > 0 else { break }
+                    let progress = min(1, time / (phaseLength - Self.delay))
+                    let first = index * (points.count - 1) / Self.phaseCount
+                    let last = (index + 1) * (points.count - 1) / Self.phaseCount
+                    let segment: Path
+                    if let shortPath {
+                        segment = shortPath.trimmedPath(from: CGFloat(index) / CGFloat(Self.phaseCount),
+                                                        to: CGFloat(index + 1) / CGFloat(Self.phaseCount))
+                    } else {
+                        segment = Path { $0.addLines(Array(points[first...last])) }
+                    }
+                    // Each matching Figma segment fades into place over 110 ms.
+                    var layer = context
+                    layer.opacity = progress * (2 - progress)
+                    layer.stroke(segment, with: .color(RunloopStyle.canvas), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
+                    layer.stroke(segment, with: .color(accent), style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
                 }
-
-                let delay = alternatives.isEmpty ? 0 : Self.routeDelay
-                let progress = (elapsed - delay) / Self.routeDrawDuration
-                guard let stroke = trace(coordinates, progress: progress) else { return }
-                context.stroke(stroke, with: .color(.black.opacity(0.92)),
-                               style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
-                context.stroke(stroke, with: .color(accent),
-                               style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-                drawHead(of: stroke, progress: progress, radius: 3, in: context)
             }
             .clipped()
         }
-    }
-
-    private func drawHead(of stroke: Path, progress: Double, radius: CGFloat, in context: GraphicsContext) {
-        guard progress < 1, let head = stroke.currentPoint else { return }
-        let marker = Path(ellipseIn: CGRect(x: head.x - radius, y: head.y - radius, width: radius * 2, height: radius * 2))
-        context.fill(marker, with: .color(RunloopStyle.text.opacity(min(1, (1 - progress) * 12))))
-    }
-
-    private func trace(_ coordinates: [RouteCoordinate], progress: Double) -> Path? {
-        guard progress > 0 else { return nil }
-        let points = coordinates.compactMap { proxy.convert($0.location, to: .local) }
-        guard points.count > 1 else { return nil }
-        let path = Path { $0.addLines(points) }
-        let t = min(1, progress)
-        return t == 1 ? path : path.trimmedPath(from: 0, to: t * (2 - t))
     }
 }

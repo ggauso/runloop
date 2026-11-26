@@ -1,10 +1,20 @@
 import MapKit
 import RunloopCore
 import SwiftUI
+import WatchKit
+
+@MainActor
+final class WatchLifecycle: NSObject, WKApplicationDelegate {
+    let inbox = WatchRouteInbox()
+    func handleActiveWorkoutRecovery() {
+        inbox.runs.local.beginRecovery(onSystemRequest: true)
+    }
+}
 
 @main
 struct RunloopApp: App {
-    @State private var inbox = WatchRouteInbox()
+    @WKApplicationDelegateAdaptor(WatchLifecycle.self) private var lifecycle
+    private var inbox: WatchRouteInbox { lifecycle.inbox }
     @AppStorage(RunloopAccent.storageKey) private var accentChoice = RunloopAccent.defaultChoice
     @Environment(\.scenePhase) private var scenePhase
 
@@ -17,8 +27,9 @@ struct RunloopApp: App {
                     library
                 }
             }
+            .modifier(RunloopLaunch(runs: inbox.runs))
             .preferredColorScheme(.dark)
-            .modifier(RequestLocationPermissionOnLaunch())
+            .modifier(RequestLocationPermissionOnLaunch(ready: inbox.runs.launchPhase == .finished && !inbox.runs.isPresented))
             .tint(accentChoice.color)
             .environment(\.runloopAccent, accentChoice.color)
             .onChange(of: inbox.runs.local.phase) { _, phase in
@@ -41,31 +52,14 @@ struct RunloopApp: App {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    Text("Percorsi").font(RunloopType.display(size: 32, relativeTo: .title))
+                        .accessibilityAddTraits(.isHeader)
                     Button("Corsa libera", systemImage: "figure.run") {
                         inbox.runs.start(route: nil, ownerID: inbox.currentOwner)
                     }
                     .buttonStyle(RunloopButtonStyle())
                     .disabled(inbox.runs.isPresented)
 
-                    if inbox.workouts.pendingCount > 0 {
-                        Button(inbox.workouts.needsRetry ? "Riprova invio corse" : "Corse in attesa di invio", systemImage: "arrow.trianglehead.clockwise") {
-                            inbox.syncWorkouts()
-                        }
-                        .buttonStyle(RunloopButtonStyle(kind: .secondary))
-                    }
-
-                    HStack(spacing: 6) {
-                        Text("Percorsi").font(RunloopType.sectionTitle).accessibilityAddTraits(.isHeader)
-                        Spacer(minLength: 0)
-                        NavigationLink {
-                            WatchRoutePlanner(inbox: inbox)
-                        } label: {
-                            Label("Nuovo", systemImage: "plus")
-                                .accessibilityLabel("Nuovo percorso")
-                        }
-                        .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))
-                        .accessibilityIdentifier("watch.library.newRoute")
-                    }
                     if inbox.readFailed {
                         Text("Impossibile leggere i percorsi.")
                             .font(.footnote).foregroundStyle(RunloopStyle.muted)
@@ -83,10 +77,25 @@ struct RunloopApp: App {
                                 ContentUnavailableView("Percorso non disponibile", systemImage: "map")
                             }
                         } label: {
-                            routeRow(route.payload, featured: route.entityID == inbox.routes.first?.entityID)
+                            routeRow(route.payload)
                         }
                         .buttonStyle(RunloopPressStyle())
+                        .accessibilityIdentifier("watch.library.route." + route.entityID.uuidString)
                     }
+                    NavigationLink {
+                        WatchRoutePlanner(inbox: inbox)
+                    } label: {
+                        Label("Nuovo percorso", systemImage: "plus")
+                    }
+                    .buttonStyle(RunloopButtonStyle(kind: .secondary))
+                    .accessibilityIdentifier("watch.library.newRoute")
+                    if inbox.workouts.pendingCount > 0 {
+                        Button(inbox.workouts.needsRetry ? "Riprova invio corse" : "Corse in attesa di invio", systemImage: "arrow.trianglehead.clockwise") {
+                            inbox.syncWorkouts()
+                        }
+                        .buttonStyle(RunloopButtonStyle(kind: .secondary))
+                    }
+
                     NavigationLink {
                         WatchRunHistory(inbox: inbox)
                     } label: {
@@ -102,30 +111,16 @@ struct RunloopApp: App {
         }
     }
 
-    private func routeRow(_ route: RouteTransfer, featured: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if featured {
-                RunloopTrace(coordinates: route.geometry.coordinates, showsGrid: true, lineWidth: 2.5)
-                    .frame(height: 62)
-                    .clipShape(.rect(cornerRadius: RunloopStyle.radius))
-                    .runloopPanel()
-            }
-            HStack(spacing: 8) {
-                if !featured {
-                    RunloopTrace(coordinates: route.geometry.coordinates, color: RunloopStyle.muted, lineWidth: 2)
-                        .frame(width: 24, height: 32)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(route.name).font(.footnote.weight(.bold))
-                    Text(routeSummary(distance: route.distanceMeters, mode: route.mode)).font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(RunloopStyle.muted)
-            }
-            .padding(.vertical, 2)
+    private func routeRow(_ route: RouteTransfer) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(route.name).font(.subheadline.weight(.semibold))
+            Text(routeSummary(distance: route.distanceMeters, mode: route.mode).uppercased())
+                .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
         }
-        .frame(minHeight: 44)
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
         .foregroundStyle(RunloopStyle.text)
+        .background(RunloopStyle.panel, in: .rect(cornerRadius: RunloopStyle.radius))
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
@@ -137,7 +132,8 @@ private struct WatchRouteDetail: View {
     let route: SyncEnvelope<RouteTransfer>
     let inbox: WatchRouteInbox
     let start: () -> Void
-    @State private var showsMap = false
+    @State private var showsMap = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var locations: [CLLocationCoordinate2D] {
         route.payload.geometry.coordinates.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
@@ -147,10 +143,6 @@ private struct WatchRouteDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 Text(route.payload.name).font(RunloopType.sectionTitle).accessibilityAddTraits(.isHeader)
-                Text(routeDistanceText(route.payload.distanceMeters))
-                    .font(RunloopType.compactMetric)
-                    .foregroundStyle(accent)
-
                 if showsMap {
                     Map(initialPosition: .rect(mapRect), interactionModes: []) {
                         MapPolyline(coordinates: locations).stroke(accent, lineWidth: 3)
@@ -161,6 +153,7 @@ private struct WatchRouteDetail: View {
                     .mapStyle(.standard(emphasis: .muted))
                     .frame(height: 76)
                     .clipShape(.rect(cornerRadius: RunloopStyle.radius))
+                    .accessibilityRepresentation { Text("Mappa del percorso, " + routeDistanceText(route.payload.distanceMeters)) }
                 } else {
                     RunloopTrace(coordinates: route.payload.geometry.coordinates, showsGrid: true)
                         .frame(height: 76)
@@ -171,12 +164,14 @@ private struct WatchRouteDetail: View {
 
                 Button("Inizia corsa", systemImage: "figure.run", action: start)
                     .buttonStyle(RunloopButtonStyle())
-                let layout = dynamicTypeSize.isAccessibilitySize
+                Text(routeSummary(distance: route.payload.distanceMeters, mode: route.payload.mode).uppercased())
+                    .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+                let layout = dynamicTypeSize >= .xxLarge
                     ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
                     : AnyLayout(HStackLayout(spacing: 6))
                 layout {
                     Button(showsMap ? "Traccia" : "Mappa") {
-                        showsMap.toggle()
+                        withAnimation(reduceMotion ? nil : RunloopMotion.status) { showsMap.toggle() }
                     }
                     .accessibilityLabel(showsMap ? "Mostra traccia" : "Apri mappa")
                     .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: true))

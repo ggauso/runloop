@@ -73,3 +73,14 @@ private func sampleWorkout(id: UUID, owner: UUID?, pointSequence: Int = 0) -> Re
     #expect(stored.first?.source == .phone)
     #expect(stored.first?.points == sample.points)
 }
+
+@Test func interactiveWorkoutMessagesPreserveSmallAndLargePayloads() throws {
+    let small = Data(#"{"entityType":"workout"}"#.utf8)
+    #expect(try WorkoutTransfer.interactiveMessage(small) == small)
+    #expect(try WorkoutTransfer.interactiveContents(small) == small)
+
+    let track = Data(String(repeating: #"{"coordinate":{"latitude":45.06,"longitude":7.65}},"#, count: 2200).utf8)
+    let message = try WorkoutTransfer.interactiveMessage(track)
+    #expect(message.count < 60_000)
+    #expect(try WorkoutTransfer.interactiveContents(message) == track)
+}

@@ -3,9 +3,13 @@ import SwiftUI
 
 struct RunSessionScreen: View {
     let runs: RunCompanion
+    var onSavedClose: (() -> Void)? = nil
     @State private var editingZones = false
     @State private var choosingEnd = false
     @Environment(\.runloopAccent) private var accent
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var isLocal: Bool { runs.local.isPresented }
     private var phase: RunWorkout.Phase { isLocal ? runs.local.phase : (runs.remote?.phase ?? .idle) }
@@ -13,6 +17,24 @@ struct RunSessionScreen: View {
     private var needsLocationChoice: Bool { isLocal ? runs.local.needsLocationChoice : runs.remote?.needsLocationChoice == true }
     private var reachable: Bool { isLocal || runs.connected }
     private var title: String { isLocal ? runs.local.route?.payload.name ?? "Corsa libera" : runs.remote?.title ?? "Corsa libera" }
+
+    private var distance: Double { isLocal ? runs.local.distance : runs.remote?.distance ?? 0 }
+    private var followsRoute: Bool { isLocal ? runs.local.route != nil : runs.remote?.planned.isEmpty == false }
+
+    private var recorder: String {
+        if !isLocal, let source = runs.remote?.source { return source.displayName }
+        #if os(watchOS)
+        return "Apple Watch"
+        #else
+        return "iPhone"
+        #endif
+    }
+
+    private func elapsed(at date: Date) -> TimeInterval {
+        if isLocal { return runs.local.elapsed(at: date) }
+        guard let remote = runs.remote else { return 0 }
+        return remote.elapsed + (reachable && phase == .running ? max(0, date.timeIntervalSince(remote.date)) : 0)
+    }
 
     var body: some View {
         Group {
@@ -39,7 +61,7 @@ struct RunSessionScreen: View {
                 .preferredColorScheme(.dark).tint(accent)
         }
         .sheet(isPresented: $choosingEnd) {
-            RunEndChoices(canDiscard: isLocal || runs.remote?.canDiscard == true, enabled: active && reachable) { decision in
+            RunEndChoices(distance: distance, elapsed: elapsed(at: .now), canDiscard: isLocal || runs.remote?.canDiscard == true, enabled: active && reachable) { decision in
                 choosingEnd = false
                 if let decision { perform(decision) }
             }
@@ -62,9 +84,9 @@ struct RunSessionScreen: View {
 
     private var dashboardSpacing: CGFloat {
         #if os(watchOS)
-        5
+        4
         #else
-        12
+        18
         #endif
     }
 
@@ -85,52 +107,69 @@ struct RunSessionScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: dashboardSpacing) {
                 if !needsLocationChoice {
-                    Text(title)
-                        #if os(iOS)
-                        .font(RunloopType.sectionTitle)
-                        #else
-                        .font(.footnote.weight(.semibold))
-                        #endif
+                    #if os(iOS)
+                    let context = phase == .saved ? "Allenamento" : followsRoute ? "Corsa su percorso" : "Corsa libera"
+                    Text((context + "  /  " + recorder).uppercased())
+                        .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
                         .accessibilityAddTraits(.isHeader)
-                }
-                if let run = runs.remote, !isLocal {
-                    Label("Registrazione su " + run.source.displayName, systemImage: run.source == .watch ? "applewatch" : "iphone")
-                        .font(.caption2).foregroundStyle(RunloopStyle.muted)
+                    if active {
+                        Text(followsRoute ? title : "Sessione libera").font(RunloopType.readout)
+                            .textCase(.uppercase).foregroundStyle(RunloopStyle.muted)
+                    }
+                    #else
+                    if !isLocal {
+                        Text("Registrazione su " + recorder).font(.caption2).foregroundStyle(RunloopStyle.muted)
+                    }
+                    #endif
                 }
                 if !reachable {
                     Label("Collegamento interrotto", systemImage: "antenna.radiowaves.left.and.right.slash").font(.footnote)
                     Button("Chiudi") { runs.closeRemote() }
                 }
                 switch phase {
-                case .running, .paused, .saved:
-                    if phase == .saved {
-                        Label(isLocal ? "Salvata in Salute" : "Corsa salvata", systemImage: "checkmark.circle.fill").foregroundStyle(accent)
-                    }
+                case .running, .paused:
                     TimelineView(.periodic(from: .now, by: 1)) { tick in
-                        let remote = runs.remote
-                        let elapsed = isLocal ? runs.local.elapsed(at: tick.date) :
-                            (remote?.elapsed ?? 0) + (reachable && phase == .running ? max(0, tick.date.timeIntervalSince(remote?.date ?? tick.date)) : 0)
-                        let distance = isLocal ? runs.local.distance : remote?.distance ?? 0
                         VStack(alignment: .leading, spacing: dashboardSpacing) {
-                            RunClock(elapsed: elapsed, phase: phase)
+                            RunClock(elapsed: elapsed(at: tick.date), phase: phase)
                             #if os(iOS)
-                            RunSplits(distance: distance, elapsed: elapsed)
+                            Divider()
                             #endif
-                            if active {
-                                RunIntensity(pulse: isLocal ? runs.local.pulse : remote?.pulse, date: tick.date, zones: runs.zones,
-                                             connected: reachable, editing: { editingZones = true })
-                            }
+                            RunSplits(distance: distance, elapsed: elapsed(at: tick.date))
                             #if os(watchOS)
-                            RunSplits(distance: distance, elapsed: elapsed)
+                            let pulse = isLocal ? runs.local.pulse : runs.remote?.pulse
+                            RunZoneStrip(zone: reachable && pulse?.isCurrent(at: tick.date) == true ? pulse.flatMap { runs.zones.zone(for: $0.bpm) } : nil,
+                                         target: runs.zones.target, tint: phase == .paused ? RunloopStyle.paused : accent)
+                            if reachable { actions }
                             #endif
+                            RunIntensity(pulse: isLocal ? runs.local.pulse : runs.remote?.pulse, date: tick.date, zones: runs.zones,
+                                         connected: reachable, editing: { editingZones = true })
                         }
                     }
-                    #if os(watchOS)
-                    if active && reachable { actions }
+                    liveMap
+                    if isLocal, let warning = runs.local.message ?? runs.local.recording.warning {
+                        Text(warning).font(.footnote).foregroundStyle(RunloopStyle.muted)
+                    }
+                case .saved:
+                    Label("Registrazione salvata", systemImage: "checkmark.circle.fill")
+                        .font(RunloopType.readout).foregroundStyle(accent)
+                    Text(routeDistanceText(distance))
+                        #if os(iOS)
+                        .font(RunloopType.display(size: 84, relativeTo: .largeTitle))
+                        #else
+                        .font(RunloopType.display(size: 47, relativeTo: .title)).foregroundStyle(accent)
+                        #endif
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                    #if os(iOS)
+                    Text(title).font(RunloopType.sectionTitle)
+                    liveMap
                     #endif
-                    if phase == .saved { doneButton }
-                    RunLiveMap(planned: isLocal ? runs.local.route?.payload.geometry.coordinates ?? [] : runs.remote?.planned ?? [],
-                               trail: isLocal ? runs.local.recording.trail : runs.remote?.trail ?? [])
+                    let total = elapsed(at: .now)
+                    Text(runClockText(total) + "   ·   " + runPaceText(duration: total, distance: distance))
+                        .font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+                    doneButton
+                    #if os(watchOS)
+                    liveMap
+                    #endif
                     if isLocal, let warning = runs.local.message ?? runs.local.recording.warning {
                         Text(warning).font(.footnote).foregroundStyle(RunloopStyle.muted)
                     }
@@ -158,7 +197,9 @@ struct RunSessionScreen: View {
             #endif
             .frame(maxWidth: .infinity)
         }
-        #if os(iOS)
+        #if os(watchOS)
+        .contentMargins(.vertical, 0, for: .scrollContent)
+        #else
         .safeAreaInset(edge: .bottom) {
             if active && reachable {
                 actions.padding(.horizontal, 20).padding(.vertical, 10)
@@ -168,10 +209,15 @@ struct RunSessionScreen: View {
         #endif
     }
 
+    private var liveMap: some View {
+        RunLiveMap(planned: isLocal ? runs.local.route?.payload.geometry.coordinates ?? [] : runs.remote?.planned ?? [],
+                   trail: isLocal ? runs.local.recording.trail : runs.remote?.trail ?? [])
+    }
+
     private var locationChoice: some View {
         VStack(alignment: .leading, spacing: dashboardSpacing) {
             Text("GPS disattivato").font(.headline).accessibilityAddTraits(.isHeader)
-            Text(isLocal ? "Attiva la posizione in Impostazioni." : "Attiva la posizione nelle Impostazioni del Watch.")
+            Text("Per registrare la traccia, attiva la posizione nelle impostazioni di " + recorder + ".")
                 .font(.footnote).foregroundStyle(RunloopStyle.muted)
             Button("Corri senza GPS") { resolveLocationChoice(recordWithoutGPS: true) }
                 .buttonStyle(RunloopButtonStyle())
@@ -187,34 +233,37 @@ struct RunSessionScreen: View {
     }
 
     private var doneButton: some View {
-        Button("Fine") {
+        Button(phase == .saved ? (onSavedClose == nil ? "Percorsi" : "Vedi allenamenti") : "Fine", systemImage: "arrow.right") {
+            let saved = phase == .saved
             if isLocal { runs.local.close() } else { runs.closeRemote() }
-        }.buttonStyle(RunloopButtonStyle())
+            if saved { onSavedClose?() }
+        }.buttonStyle(RunloopButtonStyle()).accessibilityIdentifier("run.done")
     }
 
     private var actions: some View {
         Group {
             #if os(watchOS)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) { actionButtons(compact: true) }
-                    .fixedSize(horizontal: true, vertical: false)
+            if typeSize >= .xxLarge {
                 VStack(spacing: 4) { actionButtons(compact: false) }
+            } else {
+                HStack(spacing: 4) { actionButtons(compact: true) }
             }
-            .frame(maxWidth: .infinity)
             #else
-            HStack(spacing: 6) { actionButtons(compact: false) }
+            VStack(spacing: 8) { actionButtons(compact: false) }
             #endif
         }
+        .contentTransition(reduceMotion ? .identity : .opacity)
+        .animation(reduceMotion ? nil : RunloopMotion.status, value: phase == .paused)
         .disabled(!isLocal && runs.sending)
     }
 
     @ViewBuilder private func actionButtons(compact: Bool) -> some View {
-        Button(phase == .paused ? "Riprendi" : "Pausa") {
+        Button(phase == .paused ? "Riprendi" : "Pausa", systemImage: phase == .paused ? "play.fill" : "pause.fill") {
             perform(phase == .paused ? .resume : .pause)
         }
-        .buttonStyle(RunloopButtonStyle(compact: compact))
-        Button("Termina") { choosingEnd = true }
-            .buttonStyle(RunloopButtonStyle(kind: .secondary, compact: compact))
+        .buttonStyle(RunloopButtonStyle(kind: phase == .paused ? .primary : .secondary, compact: compact, fillsAvailableWidth: compact))
+        Button("Termina", systemImage: "stop.fill") { choosingEnd = true }
+            .buttonStyle(RunloopButtonStyle(kind: .destructive, compact: compact, fillsAvailableWidth: compact))
     }
 
     private func perform(_ action: RunCompanion.Action) {
@@ -230,6 +279,8 @@ struct RunSessionScreen: View {
 }
 
 private struct RunEndChoices: View {
+    let distance: Double
+    let elapsed: TimeInterval
     let canDiscard: Bool
     let enabled: Bool
     let select: (RunCompanion.Action?) -> Void
@@ -239,21 +290,36 @@ private struct RunEndChoices: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Text(confirming ? "Scartare questa corsa?" : "Termina corsa")
+                Text(confirming ? "CONFERMA SCARTO" : "FINE SESSIONE")
+                    .font(RunloopType.readout).foregroundStyle(confirming ? RunloopStyle.danger : RunloopStyle.muted)
+                #if os(iOS)
+                Text(confirming ? "Scartare la corsa?" : "Terminare la corsa?")
+                    .font(RunloopType.display(size: 39, relativeTo: .title)).accessibilityAddTraits(.isHeader)
+                #else
+                Text(confirming ? "Scartare?" : "Terminare?")
                     .font(RunloopType.sectionTitle).accessibilityAddTraits(.isHeader)
+                #endif
                 if confirming {
-                    Text("Tempo, distanza e traccia di questa sessione andranno persi.")
+                    Text("La registrazione e la traccia GPS verranno eliminate.")
                         .font(.footnote).foregroundStyle(RunloopStyle.muted)
+                    Button("Conserva la corsa", systemImage: "arrow.uturn.backward") { confirming = false }
+                        .buttonStyle(RunloopButtonStyle())
                     Button("Scarta corsa", role: .destructive) { select(.discard) }
                         .buttonStyle(RunloopButtonStyle(kind: .destructive)).disabled(!enabled)
                 } else {
-                    Button("Salva corsa") { select(.finish) }.buttonStyle(RunloopButtonStyle()).disabled(!enabled)
+                    #if os(iOS)
+                    Text(runClockText(elapsed) + " di tempo attivo  ·  " + routeDistanceText(distance))
+                        .font(.subheadline).foregroundStyle(RunloopStyle.muted).padding(.bottom, 6)
+                    #endif
+                    Button("Salva corsa", systemImage: "checkmark") { select(.finish) }
+                        .buttonStyle(RunloopButtonStyle()).disabled(!enabled)
+                    Button("Torna alla corsa", systemImage: "arrow.uturn.backward") { select(nil) }
+                        .buttonStyle(RunloopButtonStyle(kind: .secondary))
                     if canDiscard {
                         Button("Scarta senza salvare") { confirming = true }
                             .buttonStyle(RunloopButtonStyle(kind: .destructive)).disabled(!enabled)
                     }
                 }
-                Button("Torna alla corsa") { select(nil) }.buttonStyle(RunloopButtonStyle(kind: .secondary))
             }
             .animation(reduceMotion ? nil : RunloopMotion.status, value: confirming)
             .padding()
@@ -261,24 +327,48 @@ private struct RunEndChoices: View {
     }
 }
 
+private func runClockText(_ seconds: TimeInterval) -> String {
+    let duration = Duration.seconds(max(0, seconds.rounded(.down)))
+    return seconds >= 3600 ? duration.formatted(.time(pattern: .hourMinuteSecond))
+        : duration.formatted(.time(pattern: .minuteSecond(padMinuteToLength: 2)))
+}
+
 private struct RunClock: View {
     let elapsed: Double
     let phase: RunWorkout.Phase
+    @ScaledMetric(relativeTo: .caption2) private var watchStatusSize: CGFloat = 10
     @Environment(\.runloopAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let paused = phase == .paused
         VStack(alignment: .leading, spacing: 0) {
-            Label(phase == .paused ? "In pausa" : "Tempo attivo", systemImage: phase == .paused ? "pause.fill" : "timer")
-                .font(.caption2.weight(.semibold)).foregroundStyle(phase == .paused ? RunloopStyle.paused : RunloopStyle.muted)
-            Text(Duration.seconds(elapsed).formatted(.time(pattern: .hourMinuteSecond)))
+            #if os(watchOS)
+            Text(paused ? "IN PAUSA" : "IN CORSA")
+                .font(.system(size: watchStatusSize, weight: .medium, design: .monospaced)).foregroundStyle(paused ? RunloopStyle.paused : RunloopStyle.muted)
+            #else
+            Label(paused ? "In pausa" : "In registrazione", systemImage: paused ? "pause.fill" : "figure.run")
+                .contentTransition(reduceMotion ? .identity : .opacity)
+                .font(.caption.weight(.semibold)).foregroundStyle(paused ? RunloopStyle.paused : accent)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(RunloopStyle.raised, in: Capsule())
+                .padding(.bottom, 23)
+            Text("TEMPO ATTIVO").font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+            #endif
+            Text(runClockText(elapsed))
                 #if os(iOS)
-                .font(RunloopType.display(size: 72, relativeTo: .largeTitle))
+                .font(RunloopType.display(size: 118, relativeTo: .largeTitle))
                 #else
-                .font(RunloopType.display(size: 42, relativeTo: .largeTitle))
+                .font(RunloopType.display(size: 57, relativeTo: .largeTitle))
+                .padding(.vertical, -2)
                 #endif
-                .monospacedDigit().foregroundStyle(phase == .paused ? RunloopStyle.paused : accent)
-                .lineLimit(1).minimumScaleFactor(0.65)
-        }.accessibilityElement(children: .combine).accessibilityIdentifier("run.elapsed")
+                .monospacedDigit().foregroundStyle(paused ? RunloopStyle.paused : RunloopStyle.text)
+                .lineLimit(1).minimumScaleFactor(0.48)
+        }
+        .animation(reduceMotion ? nil : RunloopMotion.status, value: paused)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel((paused ? "In pausa" : "In corsa") + ", tempo attivo " + runClockText(elapsed))
+        .accessibilityIdentifier("run.elapsed")
     }
 }
 
@@ -286,18 +376,48 @@ private struct RunSplits: View {
     let distance: Double
     let elapsed: Double
 
+    @ScaledMetric(relativeTo: .caption) private var watchSize: CGFloat = 12
+
     var body: some View {
+        #if os(watchOS)
+        let pace = runPaceText(duration: elapsed, distance: distance)
+        Text(routeDistanceText(distance) + "    ·    " + pace)
+            .font(.system(size: watchSize, weight: .medium, design: .monospaced))
+            .accessibilityLabel("Distanza " + routeDistanceText(distance) + ", passo medio " + (pace == "—" ? "non disponibile" : pace))
+        #else
         HStack(alignment: .top) {
             metric("Distanza", routeDistanceText(distance))
             metric("Passo medio", runPaceText(duration: elapsed, distance: distance))
         }
+        #endif
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).foregroundStyle(RunloopStyle.muted).font(.caption2)
-            Text(value).font(.headline.monospacedDigit()).minimumScaleFactor(0.75)
+            Text(label.uppercased()).foregroundStyle(RunloopStyle.muted).font(.caption2.monospaced())
+            Text(value).font(RunloopType.display(size: 34, relativeTo: .title).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.65)
         }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
+    }
+}
+
+private struct RunZoneStrip: View {
+    let zone: Int?
+    let target: Int?
+    let tint: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(1...5, id: \.self) { number in
+                Capsule().fill(zone == number ? tint : RunloopStyle.border)
+                    .overlay { if target == number { Capsule().strokeBorder(RunloopStyle.text, lineWidth: 1) } }
+                    .frame(height: zone == number ? 6 : 3)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 8)
+        .animation(reduceMotion ? nil : RunloopMotion.status, value: zone)
+        .accessibilityHidden(true)
     }
 }
 
@@ -325,7 +445,11 @@ private struct RunIntensity: View {
         Button(action: editing) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
-                    Label("Battito", systemImage: "heart.fill").font(.caption.weight(.semibold))
+                    Label {
+                        Text("BATTITO").font(RunloopType.readout).foregroundStyle(RunloopStyle.muted)
+                    } icon: {
+                        Image(systemName: "heart.fill").foregroundStyle(accent)
+                    }
                     Spacer()
                     Image(systemName: "slider.horizontal.3").foregroundStyle(RunloopStyle.muted)
                 }
@@ -340,20 +464,8 @@ private struct RunIntensity: View {
                     Spacer()
                     Text(status).font(.caption2.weight(.semibold)).multilineTextAlignment(.trailing)
                 }
-                HStack(spacing: 3) {
-                    ForEach(1...5, id: \.self) { number in
-                        VStack(spacing: 4) {
-                            #if os(iOS)
-                            Text("Z\(number)").font(.caption.monospacedDigit().weight(.semibold))
-                                .foregroundStyle(zone == number ? accent : RunloopStyle.muted)
-                            #endif
-                            Capsule().fill(zone == number ? accent : RunloopStyle.raised)
-                                .overlay { if zones.target == number { Capsule().strokeBorder(RunloopStyle.text, lineWidth: 1) } }
-                                .frame(height: 5)
-                        }.frame(maxWidth: .infinity)
-                    }
-                }.animation(reduceMotion ? nil : RunloopMotion.status, value: zone)
                 #if os(iOS)
+                RunZoneStrip(zone: zone, target: zones.target, tint: accent)
                 if let target = zones.target {
                     Text("Obiettivo Z\(target) · " + zones.rangeText(target))
                         .font(.footnote).foregroundStyle(RunloopStyle.muted).padding(.top, 3)

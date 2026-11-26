@@ -76,6 +76,10 @@ final class RunCompanion {
         let owner: UUID?
     }
 
+    enum LaunchPhase { case checking, introducing, finished }
+    private(set) var launchPhase: LaunchPhase = .checking
+    func finishLaunch() { launchPhase = .finished }
+
     let local = RunWorkout()
     private(set) var offer: StartOffer?
     private(set) var zones = HeartZones()
@@ -100,8 +104,20 @@ final class RunCompanion {
         UserDefaults.standard.set(try? JSONEncoder().encode(incoming), forKey: zoneKey)
     }
 
-    private(set) var remote: LiveRun?
+    // A hint only suppresses branding when the last known recorder is temporarily unreachable.
+    // Only a live status reply may present the remote timer or enable its controls.
+    private var remoteHintKey: String { "runloop.activePeer." + (owner?.uuidString ?? "guest") }
+    private(set) var remote: LiveRun? {
+        didSet {
+            guard let remote else { return }
+            let active = remote.phase == .running || remote.phase == .paused
+            if UserDefaults.standard.bool(forKey: remoteHintKey) != active {
+                UserDefaults.standard.set(active, forKey: remoteHintKey)
+            }
+        }
+    }
     private(set) var connected = false
+    private(set) var lastPeerReply: Date?
     private(set) var sending = false
     private(set) var notice: String?
     private var reservation: UUID?
@@ -247,8 +263,9 @@ final class RunCompanion {
                        needsLocationChoice: local.needsLocationChoice, date: date, source: .localDevice)
     }
 
-    func respond(_ data: Data) -> Data {
+    func respond(_ data: Data) async -> Data {
         guard let query = try? JSONDecoder().decode(Request.self, from: data) else { return Data() }
+        if launchPhase == .checking { await local.checkForActiveWorkout() }
         var reply = Reply()
         if query.owner != owner || (local.isPresented && local.ownerID != query.owner) {
             reply.occupied = reservation != nil || [.starting, .running, .paused, .saving, .saveFailed].contains(local.phase)
@@ -289,37 +306,51 @@ final class RunCompanion {
         return (try? JSONEncoder().encode(reply)) ?? Data()
     }
 
-    private func request(_ action: Action, id: UUID?, using session: WCSession, route: SyncEnvelope<RouteTransfer>? = nil) async throws -> Reply {
+    private func request(_ action: Action, id: UUID?, using session: WCSession, route: SyncEnvelope<RouteTransfer>? = nil, launchCheck: Bool = false) async throws -> Reply {
         let scope = owner
         let payload = try JSONEncoder().encode(Request(owner: scope, id: id, action: action, route: route, zones: zones))
-        let (replies, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
-        // Reachability may stay true briefly after the companion goes offline.
-        let deadline = Task {
-            // A waking Watch can take longer to acknowledge the user's pre-run choice.
-            let timeout = action == .continueWithoutGPS || action == .cancelStart ? 30 : 4
-            try await Task.sleep(for: .seconds(timeout))
-            continuation.finish(throwing: URLError(.timedOut))
+        // A waking Watch can take longer to acknowledge the user's pre-run choice.
+        let timeout = action == .continueWithoutGPS || action == .cancelStart ? 30 : 4
+        guard let data = try await session.runloopReply(to: payload, key: Self.key, replyKey: Self.key,
+                                                        timeout: launchCheck ? .milliseconds(700) : .seconds(timeout)) else {
+            if action == .status { return Reply() }
+            throw CocoaError(.coderReadCorrupt)
         }
-        defer { deadline.cancel() }
-        session.sendMessage([Self.key: payload]) { reply in
-            if let data = reply[Self.key] as? Data {
-                continuation.yield(data)
-            } else if action != .status {
-                continuation.finish(throwing: CocoaError(.coderReadCorrupt))
-                return
-            }
-            continuation.finish()
-        } errorHandler: { continuation.finish(throwing: $0) }
-        var iterator = replies.makeAsyncIterator()
-        guard let data = try await iterator.next() else { return Reply() }
         let reply = try JSONDecoder().decode(Reply.self, from: data)
         if owner == scope { mergeZones(reply.zones) }
         return reply
     }
 
-    func monitor() async {
+    #if os(watchOS)
+    func checkPhoneConnection(using session: WCSession) async throws {
+        // The monitor already asks the phone every four seconds. A fresh reply also
+        // confirms the channel when queued messages are draining after a reconnect.
+        if connected, let lastPeerReply, Date.now.timeIntervalSince(lastPeerReply) < 4 { return }
+        _ = try await request(.status, id: nil, using: session)
+    }
+    #endif
+
+    func monitor(peerReady: () -> Bool = { true }) async {
+        if launchPhase == .checking {
+            await local.checkForActiveWorkout()
+            guard !Task.isCancelled else { return }
+            if !local.isPresented, WCSession.isSupported() {
+                // Activation follows process launch. Ask a reachable recorder before showing the brand.
+                for _ in 0..<8 where WCSession.default.activationState != .activated || !peerReady() {
+                    do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
+                }
+                if peerReady(), peer != nil {
+                    await exchange(.status, launchCheck: true)
+                }
+            }
+            guard !Task.isCancelled else { return }
+            if launchPhase == .checking {
+                let previouslyActivePeer = UserDefaults.standard.bool(forKey: remoteHintKey)
+                launchPhase = isPresented || local.hasRecoveryContext || previouslyActivePeer ? .finished : .introducing
+            }
+        }
         while !Task.isCancelled {
-            if !local.isPresented, !sending, offer == nil, reservation == nil { await exchange(.status) }
+            if peerReady(), !local.isPresented, !sending, offer == nil, reservation == nil { await exchange(.status) }
             do { try await Task.sleep(for: .seconds(remote == nil ? 4 : 1.5)) }
             catch { return }
         }
@@ -331,17 +362,19 @@ final class RunCompanion {
         Task { await exchange(action); sending = false }
     }
 
-    private func exchange(_ action: Action) async {
+    private func exchange(_ action: Action, launchCheck: Bool = false) async {
         guard let peer else { connected = false; return }
         revision += 1
         let sent = revision
         do {
-            let reply = try await request(action, id: remote?.id, using: peer)
+            let reply = try await request(action, id: remote?.id, using: peer, launchCheck: launchCheck)
             guard sent == revision, !Task.isCancelled, reservation == nil, !local.isPresented else { return }
             connected = true
+            lastPeerReply = .now
             if let run = reply.run, run.id != ignored, (![.saved, .discarded, .startFailed].contains(run.phase) || remote?.id == run.id) {
                 remote = run
             } else if remote?.phase != .saved && remote?.phase != .discarded {
+                if reply.run == nil { UserDefaults.standard.removeObject(forKey: remoteHintKey) }
                 remote = nil
             }
         } catch {
@@ -354,6 +387,27 @@ final class RunCompanion {
         ignored = remote?.id
         remote = nil
         notice = nil
+    }
+}
+
+extension WCSession {
+    @MainActor
+    func runloopReply(to payload: Data, key: String, replyKey: String, timeout: Duration) async throws -> Data? {
+        try Task.checkCancellation()
+        let (replies, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
+        let deadline = Task {
+            try await Task.sleep(for: timeout)
+            continuation.finish(throwing: URLError(.timedOut))
+        }
+        defer { deadline.cancel() }
+        sendMessage([key: payload]) { reply in
+            if let data = reply[replyKey] as? Data { continuation.yield(data) }
+            continuation.finish()
+        } errorHandler: { continuation.finish(throwing: $0) }
+        var iterator = replies.makeAsyncIterator()
+        let result = try await iterator.next()
+        try Task.checkCancellation()
+        return result
     }
 }
 

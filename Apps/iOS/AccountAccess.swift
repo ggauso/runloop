@@ -1,4 +1,6 @@
 import Foundation
+import MapKit
+import RunloopCore
 import Supabase
 import SwiftUI
 
@@ -154,6 +156,10 @@ private struct BackendConfiguration {
 }
 
 struct AccountView: View {
+    var openRoutes: (() -> Void)? = nil
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(PhoneWatchTransfer.self) private var watch
     @Environment(AccountAccess.self) private var access
     @Environment(WorkoutCloudSync.self) private var workoutCloud
@@ -167,6 +173,39 @@ struct AccountView: View {
 
     var body: some View {
         Form {
+            Section {
+                RunloopHeading(context: "Runloop  /  Preferenze", title: creatingAccount ? "Registrazione" : "Account")
+            }.listRowBackground(Color.clear)
+            Section {
+                Text("Scegli l’accento di iPhone e Watch.").font(.subheadline).foregroundStyle(RunloopStyle.muted)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 6) {
+                    ForEach(RunloopAccent.allCases, id: \.self) { choice in
+                        Button {
+                            withAnimation(reduceMotion ? nil : RunloopMotion.status) { accentChoice = choice }
+                        } label: {
+                            VStack(spacing: 8) {
+                                Circle().fill(choice.color).frame(width: 30, height: 30)
+                                    .overlay { if accentChoice == choice { Image(systemName: "checkmark").font(.footnote.bold()).foregroundStyle(RunloopStyle.canvas) } }
+                                Text(choice.title).font(.caption)
+                            }
+                            .padding(.vertical, 9).frame(maxWidth: .infinity)
+                            .background(RunloopStyle.panel, in: .rect(cornerRadius: RunloopStyle.radius))
+                        }
+                        .buttonStyle(RunloopPressStyle())
+                        .accessibilityAddTraits(accentChoice == choice ? .isSelected : [])
+                        .accessibilityIdentifier("account.accent.\(choice.rawValue)")
+                    }
+                }
+                .sensoryFeedback(.selection, trigger: accentChoice)
+            } header: { Text("Colore del percorso") }
+            .listRowBackground(Color.clear)
+            Section {
+                colorPreview
+                Button(openRoutes == nil ? "Torna indietro" : "Vai ai percorsi", systemImage: openRoutes == nil ? "chevron.backward" : "map") {
+                    if let openRoutes { openRoutes() } else { dismiss() }
+                }.buttonStyle(RunloopButtonStyle())
+            } header: { Text("Anteprima") }
+            .listRowBackground(Color.clear)
             if access.isRestoring {
                 ProgressView("Ripristino dell’accesso…")
             } else if let session = access.session {
@@ -221,19 +260,6 @@ struct AccountView: View {
 
             Section("Preferenze") {
                 NavigationLink("Zone cardiache") { RunZoneEditor(runs: watch.runs) }
-                Picker("Colore fluo", selection: $accentChoice) {
-                    ForEach(RunloopAccent.allCases, id: \.self) { choice in
-                        Label {
-                            Text(choice.title)
-                        } icon: {
-                            Circle().fill(choice.color).frame(width: 14, height: 14)
-                        }
-                        .tag(choice)
-                        .accessibilityIdentifier("account.accent.\(choice.rawValue)")
-                    }
-                }
-                .pickerStyle(.inline)
-                .accessibilityIdentifier("account.accent")
             }
             .listRowBackground(RunloopStyle.panel)
 
@@ -260,16 +286,53 @@ struct AccountView: View {
         .scrollContentBackground(.hidden)
         .runloopCanvas()
         .disabled(access.isWorking)
-        .navigationTitle(creatingAccount && access.session == nil ? "Registrazione" : "Account")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(creatingAccount && access.session == nil ? "Registrazione" : "Account")
-                    .font(RunloopType.sectionTitle)
-                    .accessibilityAddTraits(.isHeader)
-            }
-        }
+        .navigationTitle("")
+        .toolbar(openRoutes == nil ? .visible : .hidden, for: .navigationBar)
     }
+
+    private var colorPreview: some View {
+        // The color sample follows the Crocetta loop used by the design prototype.
+        let points = Self.sampleLoop
+        return Map(initialPosition: .rect(routeMapRect(points)), interactionModes: []) {
+            MapPolyline(coordinates: points.map(\.location)).stroke(accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+        }
+        .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
+        .frame(height: 175).clipShape(.rect(cornerRadius: RunloopStyle.radius))
+        .accessibilityLabel("Anteprima del colore sul percorso di esempio")
+    }
+
+    private static let sampleLoop: [RouteCoordinate] = [
+        .init(latitude: 45.06099, longitude: 7.65860),
+        .init(latitude: 45.06023, longitude: 7.66060),
+        .init(latitude: 45.06058, longitude: 7.66107),
+        .init(latitude: 45.06038, longitude: 7.66159),
+        .init(latitude: 45.06229, longitude: 7.66295),
+        .init(latitude: 45.06241, longitude: 7.66668),
+        .init(latitude: 45.06605, longitude: 7.66935),
+        .init(latitude: 45.06580, longitude: 7.67003),
+        .init(latitude: 45.06603, longitude: 7.67019),
+        .init(latitude: 45.06602, longitude: 7.67152),
+        .init(latitude: 45.06726, longitude: 7.67237),
+        .init(latitude: 45.06661, longitude: 7.67422),
+        .init(latitude: 45.06807, longitude: 7.67525),
+        .init(latitude: 45.06778, longitude: 7.67604),
+        .init(latitude: 45.06321, longitude: 7.67279),
+        .init(latitude: 45.06338, longitude: 7.67213),
+        .init(latitude: 45.06308, longitude: 7.67086),
+        .init(latitude: 45.06346, longitude: 7.66977),
+        .init(latitude: 45.06228, longitude: 7.66889),
+        .init(latitude: 45.06242, longitude: 7.66390),
+        .init(latitude: 45.06275, longitude: 7.66338),
+        .init(latitude: 45.06243, longitude: 7.66313),
+        .init(latitude: 45.06244, longitude: 7.66240),
+        .init(latitude: 45.06167, longitude: 7.66184),
+        .init(latitude: 45.06197, longitude: 7.66099),
+        .init(latitude: 45.06078, longitude: 7.66013),
+        .init(latitude: 45.06140, longitude: 7.65839),
+        .init(latitude: 45.06114, longitude: 7.65821),
+        .init(latitude: 45.06099, longitude: 7.65860),
+    ]
 
     private func submit() {
         let submittedPassword = password

@@ -12,6 +12,49 @@ final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilder
         case idle, starting, running, paused, saving, saved, discarded, discardFailed, startFailed, saveFailed
     }
 
+    private struct RecoveryContext: Codable {
+        let id: UUID
+        let startedAt: Date
+        let owner: UUID?
+        let route: SyncEnvelope<RouteTransfer>?
+        let recordsGPS: Bool
+
+        static var file: URL { URL.applicationSupportDirectory.appending(path: "Runloop/current-workout.json") }
+
+        func save() throws {
+            try JSONEncoder().encode(self).write(to: Self.file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+
+        static func matching(_ start: Date) -> Self? {
+            guard let data = try? Data(contentsOf: file),
+                  let context = try? JSONDecoder().decode(Self.self, from: data),
+                  abs(context.startedAt.timeIntervalSince(start)) < 1 else { return nil }
+            return context
+        }
+    }
+
+    // HealthKit can offer a session for recovery while its asynchronous end is still in flight.
+    private struct DiscardIntent: Codable {
+        let id: UUID
+        let startedAt: Date
+
+        static var file: URL { RecoveryContext.file.deletingLastPathComponent().appending(path: "last-discard.json") }
+
+        func save() throws {
+            try JSONEncoder().encode(self).write(to: Self.file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+
+        static func matching(_ start: Date, context: RecoveryContext?) -> Self? {
+            guard let data = try? Data(contentsOf: file),
+                  let intent = try? JSONDecoder().decode(Self.self, from: data),
+                  abs(intent.startedAt.timeIntervalSince(start)) < 1,
+                  context == nil || context?.id == intent.id else { return nil }
+            return intent
+        }
+    }
+
+    @ObservationIgnored private var checkedForRecovery = false
+    @ObservationIgnored private var recovery: Task<Void, Never>?
     private let store = HKHealthStore()
     let recording = RunRecording()
     private var session: HKWorkoutSession?
@@ -37,6 +80,78 @@ final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilder
     var isPresented: Bool { phase != .idle }
     var distance: Double { max(healthDistance, recording.distance) }
 
+    var hasRecoveryContext: Bool { FileManager.default.fileExists(atPath: RecoveryContext.file.path) }
+
+    /// HealthKit can leave the recovery request pending when there is no live workout.
+    /// Keep listening for its answer without holding the launch screen indefinitely.
+    func checkForActiveWorkout() async {
+        let expected = hasRecoveryContext
+        guard beginRecovery() else { return }
+        let deadline = ContinuousClock.now.advanced(by: .milliseconds(expected ? 1000 : 180))
+        while recovery != nil && ContinuousClock.now < deadline {
+            do { try await Task.sleep(for: .milliseconds(20)) } catch { return }
+        }
+    }
+
+    @discardableResult
+    func beginRecovery(onSystemRequest: Bool = false) -> Bool {
+        if recovery != nil { return true }
+        guard phase == .idle, (!checkedForRecovery || onSystemRequest),
+              onSystemRequest || hasRecoveryContext || RunRecording.hasUnfinishedJournal,
+              HKHealthStore.isHealthDataAvailable(),
+              store.authorizationStatus(for: .workoutType()) == .sharingAuthorized else { return false }
+        let task = Task { @MainActor in
+            defer { self.recovery = nil }
+            let activeSession: HKWorkoutSession?
+            do { activeSession = try await store.recoverActiveWorkoutSession() }
+            catch { return }
+            checkedForRecovery = true
+            guard phase == .idle else { return }
+            guard let recovered = activeSession, [.running, .paused].contains(recovered.state),
+                  let start = recovered.startDate else {
+                try? FileManager.default.removeItem(at: RecoveryContext.file)
+                return
+            }
+            let context = RecoveryContext.matching(start)
+            let live = recovered.associatedWorkoutBuilder()
+            if let intent = DiscardIntent.matching(start, context: context) {
+                recovered.end()
+                live.discardWorkout()
+                try? recording.discard(id: intent.id)
+                if context?.id == intent.id { try? FileManager.default.removeItem(at: RecoveryContext.file) }
+                return
+            }
+            session = recovered
+            builder = live
+            recovered.delegate = self
+            live.delegate = self
+            live.dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: recovered.workoutConfiguration)
+            let id = context?.id ?? UUID()
+            runID = id
+            ownerID = context?.owner
+            route = context?.route
+            startedAt = start
+            recording.restore(id: id, recordsGPS: context?.recordsGPS ?? true)
+            if context == nil {
+                try? RecoveryContext(id: id, startedAt: start, owner: nil, route: nil, recordsGPS: true).save()
+            }
+            let now = Date.now
+            accumulatedTime = live.elapsedTime(at: now)
+            healthDistance = live.statistics(for: HKQuantityType(.distanceWalkingRunning))?.sumQuantity()?.doubleValue(for: .meter()) ?? 0
+            didBeginCollection = true
+            if recovered.state == .running {
+                activeStart = now
+                recording.resume(at: now, elapsed: accumulatedTime)
+                phase = .running
+            } else {
+                activeStart = nil
+                phase = .paused
+            }
+        }
+        recovery = task
+        return true
+    }
+
     func start(id: UUID, route: SyncEnvelope<RouteTransfer>?, ownerID: UUID?) {
         guard phase == .idle else { return }
         runID = id
@@ -44,14 +159,12 @@ final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilder
         self.ownerID = route?.payload.ownerID ?? ownerID
         phase = .starting
         Task {
-            #if os(watchOS)
             let status = await recording.authorizationForStart()
             guard runID == id, phase == .starting else { return }
             guard status == .authorizedWhenInUse || status == .authorizedAlways else {
                 needsLocationChoice = true
                 return
             }
-            #endif
             await startSession(recordsGPS: true)
         }
     }
@@ -100,6 +213,7 @@ final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilder
             guard let runID else { return }
             try recording.prepare(id: runID, recordsGPS: recordsGPS)
             let date = Date.now
+            try RecoveryContext(id: runID, startedAt: date, owner: self.ownerID, route: route, recordsGPS: recordsGPS).save()
             startedAt = date
             newSession.startActivity(with: date)
             try await newBuilder.beginCollection(at: date)
@@ -133,15 +247,18 @@ final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilder
 
     func discard() {
         guard phase == .running || phase == .paused || phase == .discardFailed else { return }
-        freezeTime(at: .now)
-        // Detach before ending: late HealthKit callbacks must never enter the save path.
-        let abandoned = session
-        session = nil
-        builder?.discardWorkout()
-        builder = nil
-        abandoned?.end()
+        guard let runID, let startedAt else { return }
         do {
-            try recording.discard()
+            try DiscardIntent(id: runID, startedAt: startedAt).save()
+            freezeTime(at: .now)
+            // Detach before ending so late delegate callbacks cannot start a save.
+            let abandoned = session
+            session = nil
+            abandoned?.end()
+            builder?.discardWorkout()
+            builder = nil
+            try recording.discard(id: runID)
+            try? FileManager.default.removeItem(at: RecoveryContext.file)
             pulse = nil
             healthDistance = 0
             phase = .discarded
@@ -173,6 +290,7 @@ final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilder
         runID = nil
         startedAt = nil
         accumulatedTime = 0
+        activeStart = nil
         stoppedAt = nil
         collectionEnded = false
         didBeginCollection = false
@@ -190,6 +308,7 @@ final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilder
         builder = nil
         currentSession?.end()
         recording.discardEmptyJournal()
+        try? FileManager.default.removeItem(at: RecoveryContext.file)
         self.message = message
         phase = .startFailed
     }
@@ -221,6 +340,7 @@ final class RunWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilder
                                          startedAt: startedAt, endedAt: date, activeDurationSeconds: elapsed(at: date),
                                          distanceMeters: distance, averageHeartRateBPM: averageHeartRate, points: points, source: .localDevice)
             try recording.save(record)
+            try? FileManager.default.removeItem(at: RecoveryContext.file)
             let currentSession = session
             session = nil
             self.builder = nil

@@ -23,6 +23,21 @@ xcrun simctl location ID_IPHONE_SIMULATO set 45.0609793,7.6585835
 xcrun simctl location ID_WATCH_SIMULATO set 45.0609793,7.6585835
 ```
 
+## Test Xcode dell’anello da 5 km
+
+Aprire lo schema **Anello 5 km**, selezionare **My Mac** e premere **⌘U**. Il Mac coordina le due prove di interfaccia sulla coppia attiva di simulatori Xcode. Durante la registrazione il test spegne il simulatore iPhone e lo riaccende per verificare la consegna. Usare una coppia dedicata alle prove.
+
+Prima della prima esecuzione, avviare Supabase e il servizio percorsi locale con la copertura di Torino, accedere all’account di sviluppo nell’app iPhone e autorizzare Runloop in Salute sul Watch simulato. Il test imposta la posizione di partenza a Torino e crea un nuovo percorso con un nome univoco. La corsa salvata resta consultabile nell’account di prova.
+
+Il registratore del Watch segue realmente nel tempo la geometria ricevuta, con posizioni simulate a 12 m/s e una pausa. Un giro di 5 km richiede circa sette minuti di movimento, oltre ai tempi di build e riavvio dei simulatori. Nel risultato XCTest si trovano il GPX creato dal pulsante «Esporta GPX», il confronto dei tempi e il numero di copie della corsa nello storico iPhone.
+
+Lo stesso test si può avviare da terminale.
+
+```sh
+xcodebuild -project Runloop.xcodeproj -scheme 'Anello 5 km' \
+  -destination 'platform=macOS' -parallel-testing-enabled NO test
+```
+
 ## Supabase locale
 
 Stack ufficiale Supabase `docker/`, fissato al commit `6205145edd7d94c6b1e37437c873df7d0b5b9d3d`. Richiede Docker Compose, OpenSSL e le dipendenze indicate dalla documentazione ufficiale inclusa. Solo sviluppo locale: la configurazione upstream pubblica porte sull'host, limitarne l'accesso prima di collegarsi a reti non fidate.

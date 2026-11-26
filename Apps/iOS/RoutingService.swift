@@ -54,6 +54,7 @@ struct RoutingService {
                     return "Non trovo un percorso pedonale tra questi punti. Sposta le tappe o scegli un’altra zona."
                 }
             case 429: return "Hai raggiunto il limite di ricerche. Riprova tra un minuto."
+            case 502, 503: return "Servizio percorsi temporaneamente non disponibile. Riprova tra poco."
             case 504: return "Il calcolo ha impiegato troppo tempo. Riprova."
             default: break
             }

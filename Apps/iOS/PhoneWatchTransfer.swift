@@ -34,7 +34,7 @@ final class PhoneWatchTransfer: NSObject, WCSessionDelegate {
     @ObservationIgnored weak var routeAccount: AccountAccess?
     private(set) var watchRouteRevision = 0
     private var accent = RunloopAccent.defaultChoice
-    private var hasAccountState = false
+    private(set) var hasAccountState = false
     private var ready = false
     private var session: WCSession?
     private var pendingDeletions: [WorkoutReceipt] = []
@@ -255,7 +255,7 @@ final class PhoneWatchTransfer: NSObject, WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any],
                              replyHandler: @escaping @Sendable ([String: Any]) -> Void) {
         if let data = message[RunCompanion.key] as? Data {
-            Task { @MainActor in replyHandler([RunCompanion.key: runs.respond(data)]) }
+            Task { @MainActor in replyHandler([RunCompanion.key: await runs.respond(data)]) }
             return
         }
         guard let data = message[WatchRouteMessage.requestKey] as? Data else { replyHandler([:]); return }
@@ -376,7 +376,10 @@ final class PhoneWatchTransfer: NSObject, WCSessionDelegate {
     #if targetEnvironment(simulator)
     nonisolated func session(_ session: WCSession, didReceiveMessageData messageData: Data,
                              replyHandler: @escaping @Sendable (Data) -> Void) {
-        Task { @MainActor in replyHandler((try? receiveWorkout(messageData)) ?? Data()) }
+        Task { @MainActor in
+            let receipt = try? receiveWorkout(WorkoutTransfer.interactiveContents(messageData))
+            replyHandler(receipt ?? Data())
+        }
     }
     #endif
 }

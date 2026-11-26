@@ -13,7 +13,6 @@ final class RunRecording: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var journal: URL?
     private var recordsGPS = true
-    #if os(watchOS)
     private var permissionRequest: CheckedContinuation<CLAuthorizationStatus, Never>?
 
     func authorizationForStart() async -> CLAuthorizationStatus {
@@ -23,7 +22,7 @@ final class RunRecording: NSObject, CLLocationManagerDelegate {
             manager.requestWhenInUseAuthorization()
         }
     }
-    #endif
+
     private var isRecording = false
     private var activeInterval: (start: Date, elapsed: Double)?
     private var lastLocation: CLLocation?
@@ -46,13 +45,29 @@ final class RunRecording: NSObject, CLLocationManagerDelegate {
         manager.distanceFilter = 4
     }
 
-    func prepare(id: UUID, recordsGPS: Bool) throws {
+    private static var journalRoot: URL {
         #if os(iOS)
-        let journals = URL.applicationSupportDirectory.appending(path: "Runloop/ActiveRuns", directoryHint: .isDirectory)
+        URL.applicationSupportDirectory.appending(path: "Runloop/ActiveRuns", directoryHint: .isDirectory)
         #else
-        let journals = Self.directory
+        directory
         #endif
-        let directory = journals.appending(path: id.uuidString, directoryHint: .isDirectory)
+    }
+
+    static var hasUnfinishedJournal: Bool {
+        let files = FileManager.default
+        let directories = (try? files.contentsOfDirectory(at: journalRoot, includingPropertiesForKeys: nil)) ?? []
+        return directories.contains { directory in
+            UUID(uuidString: directory.lastPathComponent) != nil &&
+                files.fileExists(atPath: directory.appending(path: "points.jsonl").path)
+        }
+    }
+
+    private static func journalDirectory(for id: UUID) -> URL {
+        journalRoot.appending(path: id.uuidString, directoryHint: .isDirectory)
+    }
+
+    func prepare(id: UUID, recordsGPS: Bool) throws {
+        let directory = Self.journalDirectory(for: id)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appending(path: "points.jsonl")
         try Data().write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -62,6 +77,46 @@ final class RunRecording: NSObject, CLLocationManagerDelegate {
         distance = 0
         pointCount = 0
         warning = recordsGPS ? nil : "Corsa senza traccia GPS."
+    }
+
+    /// Reopen the existing GPS journal without replacing points captured before process recovery.
+    func restore(id: UUID, recordsGPS: Bool) {
+        let file = Self.journalDirectory(for: id).appending(path: "points.jsonl")
+        do {
+            if !FileManager.default.fileExists(atPath: file.path) {
+                try prepare(id: id, recordsGPS: recordsGPS)
+                return
+            }
+            self.recordsGPS = recordsGPS
+            journal = file
+            let bytes = try Data(contentsOf: file)
+            let completeSize = bytes.lastIndex(of: 10).map { $0 + 1 } ?? 0
+            if completeSize < bytes.count {
+                let handle = try FileHandle(forWritingTo: file)
+                defer { try? handle.close() }
+                try handle.truncate(atOffset: UInt64(completeSize))
+            }
+            let points = try Self.decodePoints(bytes.prefix(completeSize))
+            pointCount = points.count
+            var stretchStart = points.startIndex
+            distance = 0
+            for index in points.indices.dropFirst() {
+                let a = points[index - 1], b = points[index]
+                let gap = b.recordedAt.timeIntervalSince(a.recordedAt)
+                if let from = a.activeElapsedSeconds, let to = b.activeElapsedSeconds,
+                   gap > 0, gap <= 20, abs((to - from) - gap) < 0.001 {
+                    distance += CLLocation(latitude: a.coordinate.latitude, longitude: a.coordinate.longitude)
+                        .distance(from: CLLocation(latitude: b.coordinate.latitude, longitude: b.coordinate.longitude))
+                } else {
+                    stretchStart = index
+                }
+            }
+            trail = points[stretchStart...].suffix(200).map(\.coordinate)
+            warning = recordsGPS ? nil : "Corsa senza traccia GPS."
+        } catch {
+            self.recordsGPS = false
+            warning = "La traccia GPS precedente non è disponibile."
+        }
     }
 
     func resume(at start: Date, elapsed: Double) {
@@ -91,7 +146,11 @@ final class RunRecording: NSObject, CLLocationManagerDelegate {
         guard let journal else { return [] }
         let data = try Data(contentsOf: journal)
         let complete = data.lastIndex(of: 10).map { data[..<$0] } ?? Data()
-        return try complete.split(separator: 10).map { try JSONDecoder().decode(WorkoutPoint.self, from: Data($0)) }
+        return try Self.decodePoints(complete)
+    }
+
+    private static func decodePoints(_ data: Data) throws -> [WorkoutPoint] {
+        try data.split(separator: 10).map { try JSONDecoder().decode(WorkoutPoint.self, from: Data($0)) }
     }
 
     func save(_ workout: RecordedWorkout) throws {
@@ -107,10 +166,11 @@ final class RunRecording: NSObject, CLLocationManagerDelegate {
         #endif
     }
 
-    func discard() throws {
+    func discard(id: UUID) throws {
         pause()
-        if let journal, FileManager.default.fileExists(atPath: journal.deletingLastPathComponent().path) {
-            try FileManager.default.removeItem(at: journal.deletingLastPathComponent())
+        let directory = Self.journalDirectory(for: id)
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
         }
         clear()
     }
@@ -194,13 +254,11 @@ final class RunRecording: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in
-            #if os(watchOS)
             let status = self.manager.authorizationStatus
             if status != .notDetermined, let request = permissionRequest {
                 permissionRequest = nil
                 request.resume(returning: status)
             }
-            #endif
             updateAuthorization()
         }
     }

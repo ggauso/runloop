@@ -1,8 +1,28 @@
 # Runloop — Roadmap e task di sviluppo
 
-> **Versione:** 0.4 · **Data:** 25 novembre 2026 · **Stato:** parità della corsa outdoor verificata sui simulatori
+> **Aggiornamento del 26 novembre 2026.** La fase di sviluppo usa i simulatori Xcode iPhone 17 e Apple Watch Series 11 abbinati.
 >
 > Le decisioni di prodotto e tecniche sono in [SPEC.md](./SPEC.md). Questo file è la **checklist operativa** e la fonte di verità per lo stato di avanzamento.
+
+## Punto di ripartenza · 26 novembre 2026
+
+| Area | Funzioni disponibili in sviluppo |
+| --- | --- |
+| Percorsi | Su iPhone si possono scegliere partenza e tappe, generare anelli per distanza, confrontare varianti sulla mappa e salvare, rinominare, eliminare o inviare un percorso al polso. Anche il Watch permette di creare percorsi e varianti tramite l’iPhone raggiungibile con account connesso. La traccia già scaricata resta consultabile al polso offline. |
+| Corsa | Si può partire senza login su iPhone o Watch, in corsa libera o seguendo una traccia salvata. Il dispositivo scelto registra tempo attivo, GPS e distanza. Entrambi mostrano passo, battito quando disponibile e cinque zone con obiettivo facoltativo. Il compagno raggiungibile permette di mettere in pausa, riprendere e terminare la stessa corsa. Si può salvare in Salute o scartare con conferma. |
+| Storico e account | L’iPhone conserva storico, dettagli e tracce ed esporta in GPX sia i percorsi sia le corse con traccia. Il Watch mostra le corse recenti. Sono disponibili accesso con email, sincronizzazione per account, recupero degli invii dopo la riconnessione e scelta esplicita di associare le corse fatte prima del login. |
+| Interfaccia | Il restyle è integrato su entrambi i dispositivi, con animazioni di mappa e selezione, feedback dei comandi, colori di accento e supporto a «Riduci movimento». L’icona e lo splash «Doppio passo» sono nell’app. Riaprendola con una corsa attiva o in pausa si torna al timer. |
+
+**Prove disponibili.** I 15 test di RunloopCore coprono archivio e ritrasmissioni, trasferimento delle tracce lunghe sui simulatori, varianti di percorso, zone cardiache ed esportazione GPX. Le prove di interfaccia sui simulatori hanno verificato il ritorno al timer su entrambi, il mantenimento del tempo di pausa dopo l’interruzione del processo e il comando di pausa dall’iPhone mentre registra il Watch.
+
+**Prova dell’anello sui simulatori.** Il 26 novembre lo schema Xcode ha superato le tre fasi sulla coppia iPhone 17 e Watch Series 11. Con obiettivo 5 km, il percorso generato misurava 4.735 m e la corsa registrata 4.737 m. Dopo la riconnessione, storico e database contenevano una sola corsa con 7 min 32 s di tempo attivo. Tutti i 416 punti del GPX esportato corrispondevano alla registrazione del Watch per ordine, coordinate e orario.
+
+**Ordine di lavoro proposto**
+
+1. Per la regressione del flusso completo è disponibile lo schema Xcode **Anello 5 km**. Crea un percorso con obiettivo 5 km, lo invia al Watch, spegne il simulatore iPhone e registra l’anello con una pausa. Alla riconnessione verifica la ricevuta, una sola voce nello storico, la durata attiva e ogni coordinata e orario del GPX esportato. [Esecuzione della prova](./README.md#test-xcode-dellanello-da-5-km)
+2. Rifinire sui simulatori il primo avvio e i messaggi che compaiono quando un permesso viene negato o il servizio percorsi è irraggiungibile. Verificare il ritorno alla rete e ripetere la navigazione con testi grandi e VoiceOver sullo schermo piccolo.
+3. Quando saranno disponibili dispositivi fisici, svolgere la prova outdoor F-501 per GPS a schermo spento, battito al polso, consumo batteria e consegna in background. Per il pilota restano da definire l’area geografica coperta e l’ambiente di distribuzione.
+4. Dopo il pilota gratuito, sviluppare l’acquisto unico Pro, l’importazione GPX, l’avviso di uscita dal percorso e i parziali e trend. L’esportazione GPX fa già parte della versione gratuita.
 
 ## Decisione di prodotto · correre con iPhone o Watch
 
