@@ -1,0 +1,8 @@
+*
+!package*.json
+!db/
+!db/*.sql
+!server/
+!server/**
+!public/
+!public/**

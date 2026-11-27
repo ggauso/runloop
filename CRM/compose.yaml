@@ -1,0 +1,28 @@
+name: runloop-crm
+services:
+  crm:
+    build: .
+    ports:
+      - "127.0.0.1:4310:4310"
+    env_file: .local/database.env
+    environment:
+      PGHOST: db
+      PGDATABASE: ${RUNLOOP_CRM_DATABASE:-postgres}
+      PGUSER: runloop_crm_reader
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4310/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 4s
+      start_period: 8s
+      start_interval: 1s
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=2m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks: [runloop]
+networks:
+  runloop:
+    external: true
+    name: ${RUNLOOP_CRM_NETWORK:-runloop_default}

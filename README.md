@@ -38,6 +38,10 @@ xcodebuild -project Runloop.xcodeproj -scheme 'Anello 5 km' \
   -destination 'platform=macOS' -parallel-testing-enabled NO test
 ```
 
+## CRM per i test
+
+Il [CRM interno](./CRM/README.md) è un progetto web autonomo nella cartella `CRM/`. Mostra iscrizioni, conferme email, corse sincronizzate e percorsi salvati dal Supabase di sviluppo. Con il database avviato, fare doppio clic su **CRM/Apri CRM.command** per aprire la panoramica sul Mac.
+
 ## Supabase locale
 
 Stack ufficiale Supabase `docker/`, fissato al commit `6205145edd7d94c6b1e37437c873df7d0b5b9d3d`. Richiede Docker Compose, OpenSSL e le dipendenze indicate dalla documentazione ufficiale inclusa. Solo sviluppo locale: la configurazione upstream pubblica porte sull'host, limitarne l'accesso prima di collegarsi a reti non fidate.
@@ -75,6 +79,8 @@ docker compose exec -T db psql -X -U postgres -v ON_ERROR_STOP=1 \
   < migrations/20261124221000_workout_deletion.sql
 docker compose exec -T db psql -X -U postgres -v ON_ERROR_STOP=1 \
   < migrations/20261125120000_waypoint_loops.sql
+docker compose exec -T db psql -X -U postgres -v ON_ERROR_STOP=1 \
+  < migrations/20261127100000_first_workout_sync.sql
 docker compose exec -T db psql -X -U postgres -v ON_ERROR_STOP=1 \
   < tests/runloop_core_rls.sql
 docker compose exec -T db psql -X -U postgres -v ON_ERROR_STOP=1 \

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#141610">
+  <title>Runloop CRM</title>
+  <link rel="icon" href="/runloop.png">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="mast">
+    <div class="mast-inner">
+      <a href="#panoramica" class="brand" aria-label="Runloop CRM, panoramica"><img src="/runloop.png" alt="" width="40" height="40"><strong>Runloop</strong><span>CRM</span></a>
+      <nav aria-label="Sezioni" id="nav" hidden><a href="#panoramica">Panoramica</a><a href="#utenti">Utenti</a></nav>
+      <div class="mast-end"><span class="environment">Ambiente locale</span><button id="logout" class="plain" hidden>Esci</button></div>
+    </div>
+  </header>
+  <main>
+    <section id="gate" class="gate"><h1>Accesso operatore</h1><p id="gate-message" role="status">Verifica dell’accesso in corso…</p><noscript>Per consultare il CRM, abilita JavaScript nel browser.</noscript></section>
+    <div id="workspace" hidden>
+      <div class="page-head">
+        <div><h1 id="title">Panoramica</h1><p id="subtitle"></p></div>
+        <div class="tools">
+          <label id="period-control"><span class="sr">Periodo di osservazione</span><select id="period"><option value="7">Ultimi 7 giorni</option><option value="30" selected>Ultimi 30 giorni</option><option value="90">Ultimi 90 giorni</option></select></label>
+          <button id="refresh">Aggiorna</button>
+        </div>
+      </div>
+      <p id="notice" role="status" hidden></p>
+      <section id="overview" hidden>
+        <div id="metrics" class="metrics"></div>
+        <div class="analysis-grid">
+          <section class="panel trend">
+            <header class="panel-head"><h2>Attività giornaliera</h2><div class="legend"><span class="runs">Corse</span><span class="routes">Percorsi</span></div></header>
+            <div id="chart"></div>
+            <details id="daily-details"><summary>Valori per giorno</summary><div id="daily-table" class="scroll"></div></details>
+          </section>
+          <section class="panel"><h2>Prima corsa sincronizzata entro 7 giorni</h2><div id="first-sync"></div></section>
+          <section class="panel confirmation"><h2>Conferma email</h2><div id="confirmation"></div></section>
+        </div>
+        <section class="panel listing"><header class="panel-head"><h2>Ultimi iscritti</h2><a class="text-link" href="#utenti">Vedi tutti gli utenti</a></header><div id="recent"></div></section>
+      </section>
+      <section id="directory" class="panel listing" hidden>
+        <div class="filters">
+          <label><span>Cerca utente</span><input type="search" id="search" maxlength="200" placeholder="Email, nome o ID" autocomplete="off"></label>
+          <label><span>Stato email</span><select id="status"><option value="all">Tutti gli stati</option><option value="confirmed">Confermata</option><option value="pending">Da confermare</option></select></label>
+        </div>
+        <div id="users"></div>
+        <footer id="pagination"><span id="page-info"></span><div><button id="prev">Precedente</button><button id="next">Successiva</button></div></footer>
+      </section>
+      <footer id="updated" class="updated"></footer>
+    </div>
+  </main>
+  <dialog id="detail" aria-labelledby="detail-title"><div class="dialog-head"><h2 id="detail-title">Scheda utente</h2><button id="close">Chiudi</button></div><div id="detail-content"></div></dialog>
+</body>
+</html>
